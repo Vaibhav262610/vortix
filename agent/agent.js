@@ -95,4 +95,5 @@ function executeCommand(command, ws, deviceName) {
       })
     );
   });
+  
 }

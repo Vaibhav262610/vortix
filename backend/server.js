@@ -22,9 +22,29 @@ wss.on("connection", (ws, req) => {
   if (clientType === "dashboard") {
   dashboardClients.add(ws);
   console.log("Dashboard connected");
+  // Send initial device list to newly connected dashboard
+  broadcastDevices();
 
   ws.on("message", (message) => {
     const data = JSON.parse(message);
+    if (data.type === "FORCE_EXECUTE") {
+  const targetDevice = [...devices.values()].find(
+    (d) =>
+      d.deviceName === data.deviceName &&
+      d.status === "online"
+  );
+
+  if (!targetDevice) return;
+
+  targetDevice.ws.send(
+    JSON.stringify({
+      type: "EXECUTE",
+      command: data.command,
+    })
+  );
+
+  console.log("Force executed dangerous command");
+}
 
     if (data.type === "COMMAND") {
       const targetDevice = [...devices.values()].find(
@@ -37,6 +57,18 @@ wss.on("connection", (ws, req) => {
         console.log("Target device not found or offline");
         return;
       }
+       if (isDangerousCommand(data.command)) {
+    ws.send(
+        JSON.stringify({
+        type: "APPROVAL_REQUIRED",
+        deviceName: data.deviceName,
+        command: data.command
+        })
+    );
+
+    console.log("Dangerous command detected, approval required");
+    return;
+    }
 
       targetDevice.ws.send(
         JSON.stringify({
@@ -184,6 +216,21 @@ rl.on("line", (input) => {
   console.log(`Command sent to ${deviceName}`);
 });
 
+function isDangerousCommand(command) {
+  const dangerousPatterns = [
+    "rm -rf",
+    "format",
+    "shutdown",
+    "del /f",
+    "mkfs",
+    "diskpart"
+  ];
+
+  return dangerousPatterns.some((pattern) =>
+    command.toLowerCase().includes(pattern)
+  );
+}
+
 
 function broadcastDevices() {
   const deviceList = [];
@@ -203,19 +250,4 @@ function broadcastDevices() {
       })
     );
   });
-}
-
-function isDangerousCommand(command) {
-  const dangerousPatterns = [
-    "rm -rf",
-    "format",
-    "shutdown",
-    "del /f",
-    "mkfs",
-    "diskpart"
-  ];
-
-  return dangerousPatterns.some((pattern) =>
-    command.toLowerCase().includes(pattern)
-  );
 }
