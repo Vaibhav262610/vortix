@@ -6,9 +6,6 @@ const { v4: uuidv4 } = require("uuid");
 const readline = require("readline");
 const OpenAI = require("openai");
 
-const openai = new OpenAI({
-  apiKey: "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"
-});
 
 const wss = new WebSocket.Server({ port: 8080 });
 
