@@ -95,5 +95,15 @@ function executeCommand(command, ws, deviceName) {
       })
     );
   });
+
+  dashboardClients.forEach((client) => {
+  client.send(
+    JSON.stringify({
+      type: "EXECUTION_FINISHED",
+      deviceName: device.deviceName
+    })
+  );
+});
+
   
 }

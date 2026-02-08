@@ -8,6 +8,7 @@ type Device = {
 };
 
 export default function Home() {
+  const [isExecuting, setIsExecuting] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
@@ -28,26 +29,36 @@ export default function Home() {
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
+      console.log("Message received:", data.type, data);
 
       if (data.type === "DEVICES") {
         setDevices(data.devices);
       }
 
-      if (data.type === "APPROVAL_REQUIRED") {
-  const confirmExecute = confirm(
-    `Dangerous command detected:\n\n${data.command}\n\nExecute anyway?`
-  );
+      if (data.type === "EXECUTION_STARTED") {
+        console.log("Execution started");
+        setIsExecuting(true);
+      }
 
-  if (confirmExecute) {
-    wsRef.current?.send(
-      JSON.stringify({
-        type: "FORCE_EXECUTE",
-        deviceName: data.deviceName,
-        command: data.command,
-      })
-    );
-  }
-}
+      if (data.type === "EXECUTION_FINISHED") {
+        console.log("Execution finished");
+        setIsExecuting(false);
+      }
+
+      if (data.type === "APPROVAL_REQUIRED") {
+        const confirmExecute = confirm(
+          `Dangerous command detected:\n\n${data.command}\n\nExecute anyway?`
+        );
+        if (confirmExecute) {
+          wsRef.current?.send(
+            JSON.stringify({
+              type: "FORCE_EXECUTE",
+              deviceName: data.deviceName,
+              command: data.command,
+            })
+          );
+        }
+      }
 
       if (data.type === "LOG") {
         setLogs((prev) => [
@@ -77,14 +88,16 @@ export default function Home() {
 
     wsRef.current?.send(
       JSON.stringify({
-        type: "COMMAND",
+        type: "PLAN",
         deviceName: selectedDevice,
         command,
       })
     );
 
     setCommand("");
+    setIsExecuting(true);
   };
+
 
   return (
     <div className="min-h-screen bg-[#0d0d0f] text-white">
@@ -178,10 +191,18 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={sendCommand}
-                  className="rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-medium text-white/95 backdrop-blur-sm transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/20 sm:shrink-0"
+                  disabled={isExecuting}
+                  className={`rounded-xl border px-4 py-3 text-sm font-medium backdrop-blur-sm transition focus:outline-none focus:ring-2 sm:shrink-0 ${
+                    isExecuting
+                      ? "cursor-not-allowed border-cyan-500/40 bg-cyan-500/10 text-cyan-300 focus:ring-cyan-400/20"
+                      : "border-white/10 bg-white/10 text-white/95 hover:bg-white/15 focus:ring-white/20"
+                  }`}
                 >
-                  Send
+                  {isExecuting && "Executing..."}
+                  {!isExecuting && "Send Command"}
                 </button>
+  
+
               </div>
               {selectedDevice && (
                 <p className="mt-3 text-xs text-white/45">
