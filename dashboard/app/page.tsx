@@ -7,8 +7,18 @@ type Device = {
   status: string;
 };
 
+type ApprovalDialog = {
+  isOpen: boolean;
+  command: string;
+  deviceName: string;
+} | null;
+
 export default function Home() {
+  const [isPlanning, setIsPlanning] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [planPreview, setPlanPreview] = useState<any[]>([]);
+  const [approvalDialog, setApprovalDialog] = useState<ApprovalDialog>(null);
+
   const [devices, setDevices] = useState<Device[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
@@ -20,6 +30,7 @@ export default function Home() {
     console.log("Connecting to backend WebSocket...");
 
     const ws = new WebSocket("ws://localhost:8080?type=dashboard");
+    // console.log(isExecuting)
 
     wsRef.current = ws;
 
@@ -39,33 +50,34 @@ export default function Home() {
         console.log("Execution started");
         setIsExecuting(true);
       }
-
-      if (data.type === "EXECUTION_FINISHED") {
-        console.log("Execution finished");
-        setIsExecuting(false);
+      
+      if (data.type === "PLAN_PREVIEW") {
+        console.log("Plan preview received:", data.steps);
+        setIsPlanning(false);
+        setPlanPreview(data.steps);
+        
       }
 
       if (data.type === "APPROVAL_REQUIRED") {
-        const confirmExecute = confirm(
-          `Dangerous command detected:\n\n${data.command}\n\nExecute anyway?`
-        );
-        if (confirmExecute) {
-          wsRef.current?.send(
-            JSON.stringify({
-              type: "FORCE_EXECUTE",
-              deviceName: data.deviceName,
-              command: data.command,
-            })
-          );
-        }
+        setApprovalDialog({
+          isOpen: true,
+          command: data.command,
+          deviceName: data.deviceName,
+        });
       }
 
+      if (data.type === "EXECUTION_FINISHED") {
+        setIsExecuting(false);
+        console.log("Execution finished");
+      }
+      
       if (data.type === "LOG") {
         setLogs((prev) => [
           ...prev,
           `[${data.deviceName}] ${data.message}`,
         ]);
       }
+      // console.log("finish time:",isExecuting)
     };
 
     ws.onerror = (err) => {
@@ -83,24 +95,149 @@ export default function Home() {
 
 
 
-  const sendCommand = () => {
-    if (!selectedDevice || !command) return;
+const sendCommand = () => {
+  if (!selectedDevice || !command) return;
 
+  setIsPlanning(true);
+  setIsExecuting(true);
+
+  wsRef.current?.send(
+    JSON.stringify({
+      type: "PLAN",
+      deviceName: selectedDevice,
+      command,
+    })
+  );
+
+  setCommand("");
+};
+
+const handleApprove = () => {
+  if (approvalDialog) {
     wsRef.current?.send(
       JSON.stringify({
-        type: "PLAN",
-        deviceName: selectedDevice,
-        command,
+        type: "FORCE_EXECUTE",
+        deviceName: approvalDialog.deviceName,
+        command: approvalDialog.command,
       })
     );
+    setApprovalDialog(null);
+  }
+};
 
-    setCommand("");
-    setIsExecuting(true);
-  };
+const handleRejectApproval = () => {
+  setApprovalDialog(null);
+};
+
 
 
   return (
     <div className="min-h-screen bg-[#0d0d0f] text-white">
+    {/* Approval Notification - Inline Toast Style */}
+    {approvalDialog?.isOpen && (
+      <div className="fixed top-4 right-4 z-50 max-w-sm animate-in slide-in-from-top-2 duration-300">
+        <div className="glass rounded-2xl border border-red-500/30 p-4 shadow-2xl backdrop-blur-xl bg-gradient-to-br from-red-500/10 to-red-500/5">
+          {/* Compact Header */}
+          <div className="flex items-start gap-3 mb-3">
+            <div className="h-8 w-8 rounded-lg bg-red-500/30 flex-shrink-0 flex items-center justify-center mt-0.5">
+              <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4v2m0 0v2m0-6v-2m0 0V7a2 2 0 012-2h2.586a1 1 0 00.707-.293l-2.414-2.414a1 1 0 00-.707-.293h-3.172a2 2 0 00-2 2v2m4 6a2 2 0 100-4 2 2 0 000 4zm0 0a2 2 0 100-4 2 2 0 000 4z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-red-200">Dangerous Command Detected</h3>
+              <p className="text-xs text-red-400/80 mt-0.5">{approvalDialog.deviceName}</p>
+            </div>
+          </div>
+
+          {/* Command Preview */}
+          <div className="mb-3 p-2.5 rounded-lg bg-black/30 border border-red-500/20">
+            <p className="font-mono text-xs text-red-300/90 break-all">{approvalDialog.command}</p>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="flex gap-2">
+            <button
+              onClick={handleRejectApproval}
+              className="flex-1 px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/5 text-red-300 text-xs font-medium hover:bg-red-500/10 transition"
+            >
+              Decline
+            </button>
+            <button
+              onClick={handleApprove}
+              className="flex-1 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-medium transition shadow-lg shadow-red-600/20"
+            >
+              Approve
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {planPreview.length > 0 && (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="glass rounded-2xl border border-white/10 p-6 sm:p-8 max-w-2xl w-full mx-4 shadow-2xl">
+          {/* Header */}
+          <div className="mb-6">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                <svg className="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-white">AI Generated Plan</h3>
+                <p className="text-xs text-emerald-400/80 mt-1">{planPreview.length} steps</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Plan Steps */}
+          <div className="mb-6 space-y-2">
+            {planPreview.map((step, index) => (
+              <div key={index} className="p-3 rounded-lg bg-white/5 border border-white/10 hover:bg-white/[0.08] transition">
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-medium text-emerald-400">
+                      {index + 1}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-mono text-sm text-white/80 break-all">{step.command}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => setPlanPreview([])}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-white/80 text-sm font-medium hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white/20"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                wsRef.current?.send(
+                  JSON.stringify({
+                    type: "APPROVE_PLAN",
+                    deviceName: selectedDevice,
+                    steps: planPreview
+                  })
+                );
+                setPlanPreview([]);
+              }}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            >
+              Approve & Execute
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
       {/* Background: soft gradient + grain */}
       <div
         className="fixed inset-0 -z-10"
@@ -191,15 +328,14 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={sendCommand}
-                  disabled={isExecuting}
+                  disabled={isExecuting || isPlanning || !selectedDevice}
                   className={`rounded-xl border px-4 py-3 text-sm font-medium backdrop-blur-sm transition focus:outline-none focus:ring-2 sm:shrink-0 ${
-                    isExecuting
+                    isExecuting || isPlanning
                       ? "cursor-not-allowed border-cyan-500/40 bg-cyan-500/10 text-cyan-300 focus:ring-cyan-400/20"
                       : "border-white/10 bg-white/10 text-white/95 hover:bg-white/15 focus:ring-white/20"
                   }`}
                 >
-                  {isExecuting && "Executing..."}
-                  {!isExecuting && "Send Command"}
+                  {isExecuting ? "Executing..." : isPlanning ? "Planning..." : "Send Command"}
                 </button>
   
 

@@ -12,6 +12,27 @@ const wss = new WebSocket.Server({ port: 8080 });
 console.log("Backend running on ws://localhost:8080");
 
 const devices = new Map();
+// pendingResults holds awaiting resolvers for EXECUTE_RESULT from agents
+const pendingResults = new Map(); // deviceName -> [{ command, resolve, reject, timer }]
+
+function waitForExecuteResult(deviceName, command, timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    const list = pendingResults.get(deviceName) || [];
+    const entry = { command, resolve, reject, timer: null };
+    // timeout
+    entry.timer = setTimeout(() => {
+      // remove entry
+      const arr = pendingResults.get(deviceName) || [];
+      const idx = arr.indexOf(entry);
+      if (idx !== -1) arr.splice(idx, 1);
+      pendingResults.set(deviceName, arr);
+      reject(new Error('Timed out waiting for EXECUTE_RESULT'));
+    }, timeoutMs);
+
+    list.push(entry);
+    pendingResults.set(deviceName, list);
+  });
+}
 
 // ---------- WebSocket Handling ----------
 wss.on("connection", (ws, req) => {
@@ -83,7 +104,115 @@ wss.on("connection", (ws, req) => {
     //     `Dashboard sent command to ${data.deviceName}`
     //   );
     // }
+    if (data.type === "APPROVE_PLAN") {
+        const targetDevice = [...devices.values()].find(
+          (d) =>
+            d.deviceName === data.deviceName &&
+            d.status === "online"
+        );
+
+        if (!targetDevice) {
+          console.log("Target device not found or offline");
+          dashboardClients.forEach((client) => {
+            client.send(
+              JSON.stringify({
+                type: "EXECUTION_FINISHED",
+                deviceName: data.deviceName,
+                error: "Device not found or offline"
+              })
+            );
+          });
+          return;
+        }
+
+        console.log("APPROVE_PLAN received:", data.steps);
+
+        // Notify all dashboard clients execution started
+        dashboardClients.forEach((client) => {
+          client.send(
+            JSON.stringify({
+              type: "EXECUTION_STARTED",
+              deviceName: data.deviceName
+            })
+          );
+        });
+
+        // Execute steps sequentially: wait for agent to report EXECUTE_RESULT for each step
+        (async () => {
+          let aborted = false;
+          for (const step of data.steps) {
+            // Send command EXACTLY as provided - don't modify it
+            const commandToExecute = step.command || step;
+            console.log("Sending EXECUTE to agent for:", commandToExecute);
+            
+            targetDevice.ws.send(
+              JSON.stringify({
+                type: "EXECUTE",
+                command: commandToExecute
+              })
+            );
+
+            try {
+              const result = await waitForExecuteResult(targetDevice.deviceName, commandToExecute);
+              console.log("Step result:", result);
+
+              // send step log to dashboards
+              dashboardClients.forEach((client) => {
+                client.send(
+                  JSON.stringify({
+                    type: "LOG",
+                    deviceName: targetDevice.deviceName,
+                    message: `✓ Step completed: ${commandToExecute} (exit code: ${result.code})`
+                  })
+                );
+              });
+
+              // Continue even if code is not 0 - let user see the output
+              // but notify about non-zero exit
+              if (typeof result.code === 'number' && result.code !== 0) {
+                console.log(`Step exited with code ${result.code}: ${commandToExecute}`);
+              }
+            } catch (err) {
+              console.error("Step execution error:", err.message);
+              dashboardClients.forEach((client) => {
+                client.send(
+                  JSON.stringify({
+                    type: "LOG",
+                    deviceName: targetDevice.deviceName,
+                    message: `✗ Step failed: ${commandToExecute} - ${err.message}`
+                  })
+                );
+              });
+              dashboardClients.forEach((client) => {
+                client.send(
+                  JSON.stringify({
+                    type: "EXECUTION_FINISHED",
+                    deviceName: data.deviceName,
+                    error: err.message
+                  })
+                );
+              });
+              aborted = true;
+              break;
+            }
+          }
+
+          if (!aborted) {
+            dashboardClients.forEach((client) => {
+              client.send(
+                JSON.stringify({
+                  type: "EXECUTION_FINISHED",
+                  deviceName: data.deviceName,
+                  success: true
+                })
+              );
+            });
+          }
+        })();
+    }
+
     if (data.type === "PLAN") {
+      
   const targetDevice = [...devices.values()].find(
     (d) =>
       d.deviceName === data.deviceName &&
@@ -100,36 +229,18 @@ wss.on("connection", (ws, req) => {
       data.command,
       targetDevice.platform || "win32"
     );
+    console.log("Generated plan:", plan.steps);
 
-    console.log("AI Plan:", plan);
-    // Notify dashboard execution started
-    dashboardClients.forEach((client) => {
-      client.send(
-        JSON.stringify({
-          type: "EXECUTION_STARTED",
-          deviceName: data.deviceName
-        })
-      );
-    });
+  // SEND PLAN PREVIEW TO DASHBOARD - wait for approval
+  ws.send(
+    JSON.stringify({
+      type: "PLAN_PREVIEW",
+      deviceName: data.deviceName,
+      steps: plan.steps
+    })
+  );
 
-    for (const step of plan.steps) {
-      targetDevice.ws.send(
-        JSON.stringify({
-          type: "EXECUTE",
-          command: step.command
-        })
-      );
-    }
-
-    // Notify dashboard execution finished after all steps are sent
-    dashboardClients.forEach((client) => {
-      client.send(
-        JSON.stringify({
-          type: "EXECUTION_FINISHED",
-          deviceName: data.deviceName
-        })
-      );
-    });
+  console.log("AI Plan sent for approval:", plan);
   } catch (err) {
     console.error("AI planning error:", err.message);
     // Notify dashboard of error
@@ -195,6 +306,25 @@ wss.on("connection", (ws, req) => {
         );
       });
     }
+
+    if (data.type === "EXECUTE_RESULT") {
+      console.log(`EXECUTE_RESULT received from ${device.deviceName}:`, data);
+      const list = pendingResults.get(device.deviceName) || [];
+      for (let i = 0; i < list.length; i++) {
+        const entry = list[i];
+        if (entry.command === data.command) {
+          clearTimeout(entry.timer);
+          try {
+            entry.resolve(data);
+          } catch (e) {
+            entry.reject(e);
+          }
+          list.splice(i, 1);
+          break;
+        }
+      }
+      pendingResults.set(device.deviceName, list);
+    }
   });
 
   ws.on("close", () => {
@@ -205,8 +335,11 @@ wss.on("connection", (ws, req) => {
 });
 
 // ---------- Device Registration ----------
-function registerDevice(deviceName) {
-  const token = uuidv4();
+function registerDevice(deviceName, token) {
+  // If no token provided, use the hostname-based token for consistency
+  if (!token) {
+    token = `device-${deviceName.toLowerCase()}`;
+  }
 
   devices.set(token, {
     deviceName,
@@ -223,6 +356,7 @@ function registerDevice(deviceName) {
 
 // Register one device manually for testing
 registerDevice("Test-Device");
+registerDevice("VAIBHAV-PC");
 
 // ---------- Heartbeat Monitor ----------
 setInterval(() => {
@@ -331,12 +465,18 @@ function isDangerousCommand(command) {
 //   return JSON.parse(text);
 // }
 const axios = require("axios");
+const os = require("os");
+
 
 async function generatePlan(userInput, platform) {
+  const homeDir = os.homedir();
   const prompt = `
 You are an AI OS command planner.
 
 Convert the user request into structured JSON steps.
+System Information:
+User Home Directory: ${homeDir}
+
 
 Return ONLY valid JSON in this format:
 
@@ -351,6 +491,7 @@ Rules:
 - If platform is darwin, use Mac commands.
 - No explanation.
 - No markdown.
+- Never use C:\\Users\\username
 - Only JSON.
 
 User Request: ${userInput}
