@@ -25,6 +25,8 @@ export default function Home() {
   const [command, setCommand] = useState("");
 
   const wsRef = useRef<WebSocket | null>(null);
+  const logsRef = useRef<HTMLDivElement | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
 
   useEffect(() => {
     console.log("Connecting to backend WebSocket...");
@@ -92,6 +94,15 @@ export default function Home() {
     return () => ws.close();
   }, []);
 
+  // Auto-scroll when logs update (unless user scrolled up)
+  useEffect(() => {
+    const el = logsRef.current;
+    if (!el) return;
+    if (autoScroll) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [logs, autoScroll]);
+
 
 
 
@@ -133,29 +144,24 @@ const handleRejectApproval = () => {
 
   return (
     <div className="min-h-screen bg-[#0d0d0f] text-white">
-    {/* Approval Notification - Inline Toast Style */}
+    {/* Approval Toast - Top Right */}
     {approvalDialog?.isOpen && (
       <div className="fixed top-4 right-4 z-50 max-w-sm animate-in slide-in-from-top-2 duration-300">
         <div className="glass rounded-2xl border border-red-500/30 p-4 shadow-2xl backdrop-blur-xl bg-gradient-to-br from-red-500/10 to-red-500/5">
-          {/* Compact Header */}
           <div className="flex items-start gap-3 mb-3">
-            <div className="h-8 w-8 rounded-lg bg-red-500/30 flex-shrink-0 flex items-center justify-center mt-0.5">
+            <div className="h-8 w-8 rounded-lg bg-red-500/30 flex-shrink-0 flex items-center justify-center">
               <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4v2m0 0v2m0-6v-2m0 0V7a2 2 0 012-2h2.586a1 1 0 00.707-.293l-2.414-2.414a1 1 0 00-.707-.293h-3.172a2 2 0 00-2 2v2m4 6a2 2 0 100-4 2 2 0 000 4zm0 0a2 2 0 100-4 2 2 0 000 4z" />
               </svg>
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold text-red-200">Dangerous Command Detected</h3>
+              <h3 className="text-sm font-semibold text-red-200">Dangerous Command</h3>
               <p className="text-xs text-red-400/80 mt-0.5">{approvalDialog.deviceName}</p>
             </div>
           </div>
-
-          {/* Command Preview */}
           <div className="mb-3 p-2.5 rounded-lg bg-black/30 border border-red-500/20">
             <p className="font-mono text-xs text-red-300/90 break-all">{approvalDialog.command}</p>
           </div>
-
-          {/* Quick Actions */}
           <div className="flex gap-2">
             <button
               onClick={handleRejectApproval}
@@ -348,7 +354,7 @@ const handleRejectApproval = () => {
             </div>
 
             {/* Logs — glass window */}
-            <div className="glass flex min-h-[280px] flex-1 flex-col overflow-hidden rounded-2xl">
+            <div className="glass rounded-2xl overflow-hidden flex flex-col">
               <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2.5">
                 <div className="flex gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-white/20" />
@@ -356,8 +362,21 @@ const handleRejectApproval = () => {
                   <span className="h-2 w-2 rounded-full bg-white/20" />
                 </div>
                 <span className="text-xs font-medium text-white/50">Logs</span>
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    onClick={() => setAutoScroll((s) => !s)}
+                    className={`text-xs px-2 py-1 rounded-md border ${autoScroll ? 'bg-white/5 border-white/10 text-white' : 'bg-transparent border-white/10 text-white/60'}`}
+                  >
+                    {autoScroll ? 'Auto-scroll: ON' : 'Auto-scroll: OFF'}
+                  </button>
+                </div>
               </div>
-              <div className="flex-1 overflow-auto p-3 font-mono text-[13px] leading-relaxed text-white/75">
+              <div ref={logsRef} onScroll={() => {
+                  const el = logsRef.current;
+                  if (!el) return;
+                  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+                  if (atBottom !== autoScroll) setAutoScroll(atBottom);
+                }} className="h-80 overflow-y-auto p-3 font-mono text-[13px] leading-relaxed text-white/75">
                 {logs.length === 0 ? (
                   <p className="text-white/35">No entries yet.</p>
                 ) : (

@@ -125,7 +125,7 @@ wss.on("connection", (ws, req) => {
           return;
         }
 
-        console.log("APPROVE_PLAN received:", data.steps);
+       console.log("APPROVE_PLAN received:", data.steps);
 
         // Notify all dashboard clients execution started
         dashboardClients.forEach((client) => {
@@ -470,38 +470,43 @@ const os = require("os");
 
 async function generatePlan(userInput, platform) {
   const homeDir = os.homedir();
+  const desktopPath = require("path").join(homeDir, "Desktop");
+  
   const prompt = `
-You are an AI OS command planner.
+You are an AI OS command planner. Generate EXACT Windows commands for the user's request.
 
-Convert the user request into structured JSON steps.
 System Information:
-User Home Directory: ${homeDir}
+- Home Directory: ${homeDir}
+- Desktop Path: ${desktopPath}
+- Platform: Windows
 
+CRITICAL RULES:
+1. Return ONLY valid JSON in this format - nothing else
+2. Use ABSOLUTE paths, NOT relative paths
+3. Use echo command for file creation (NOT type, NOT powershell)
+4. One command per step
+5. Never create unnecessary directories before files
+6. Format: echo "content" > full_path_to_file.txt
 
-Return ONLY valid JSON in this format:
+CORRECT Examples:
+- "create hello.txt with html on desktop"
+  Response: {"steps": [{"command": "echo <!DOCTYPE html><html><head><title>Hello</title></head><body><h1>Hello</h1></body></html> > ${desktopPath}\\hello.txt"}]}
 
-{
-  "steps": [
-    { "command": "..." }
-  ]
-}
+- "create test file with hello world"  
+  Response: {"steps": [{"command": "echo hello world > ${homeDir}\\Desktop\\test.txt"}]}
 
-Rules:
-- If platform is win32, use Windows commands.
-- If platform is darwin, use Mac commands.
-- No explanation.
-- No markdown.
-- Never use C:\\Users\\username
-- Only JSON.
+- "list desktop files"
+  Response: {"steps": [{"command": "dir ${desktopPath}"}]}
 
 User Request: ${userInput}
-Platform: ${platform}
+
+Return ONLY JSON:
 `;
 
   const response = await axios.post(
     "http://localhost:11434/api/generate",
     {
-      model: "llama3.1",
+      model: "qwen2.5:7b",
       prompt: prompt,
       stream: false
     }

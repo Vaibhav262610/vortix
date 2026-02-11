@@ -94,6 +94,7 @@ function startAgent() {
     let match = command.match(/^\s*cd\s+\/[dD]\s+([^\s]+)\s*$/i);
     if (match) {
       let path = match[1].trim();
+      path = expandPath(path);
       // Ensure it ends with backslash if it's just a drive letter
       if (/^[A-Za-z]:$/.test(path)) {
         path = path + "\\";
@@ -106,6 +107,7 @@ function startAgent() {
     match = command.match(/^\s*cd\s+([^\s][^\s]*)\s*$/i);
     if (match) {
       let path = match[1].trim();
+      path = expandPath(path);
       // Only treat as cd if it looks like a path (has : or starts with \)
       if (/[:\\]/.test(path)) {
         if (/^[A-Za-z]:$/.test(path)) {
@@ -117,6 +119,22 @@ function startAgent() {
     }
     
     return null;
+  }
+
+  function expandPath(path) {
+    // Expand environment variables
+    if (path.includes("%USERPROFILE%")) {
+      path = path.replace(/%USERPROFILE%/gi, os.homedir());
+    }
+    if (path.includes("%HOMEPATH%")) {
+      path = path.replace(/%HOMEPATH%/gi, os.homedir());
+    }
+    if (path.includes("%HOMEDRIVE%")) {
+      const homedir = os.homedir();
+      const drive = homedir.split("\\")[0];
+      path = path.replace(/%HOMEDRIVE%/gi, drive);
+    }
+    return path;
   }
 
   function processQueue() {
@@ -131,13 +149,13 @@ function startAgent() {
     const newCwd = extractDirectoryFromCommand(command);
     if (newCwd) {
       currentCwd = newCwd;
-      ws.send(JSON.stringify({ type: "LOG", message: `📁 Directory changed to: ${currentCwd}` }));
+      ws.send(JSON.stringify({ type: "LOG", deviceName, message: `📁 Directory changed to: ${currentCwd}` }));
       console.log("Directory state updated to:", currentCwd);
     }
 
     // report current cwd for diagnostics
-    ws.send(JSON.stringify({ type: "LOG", message: `📍 Working from: ${currentCwd}` }));
-    ws.send(JSON.stringify({ type: "LOG", message: `⚙️ Executing: ${command}` }));
+    ws.send(JSON.stringify({ type: "LOG", deviceName, message: `📍 Working from: ${currentCwd}` }));
+    ws.send(JSON.stringify({ type: "LOG", deviceName, message: `⚙️ Executing: ${command}` }));
 
     // Use cmd.exe with /c flag to properly execute Windows commands
     const process = exec(command, {
@@ -154,6 +172,7 @@ function startAgent() {
       hasOutput = true;
       ws.send(JSON.stringify({
         type: "LOG",
+        deviceName,
         message: data.toString()
       }));
     });
@@ -162,6 +181,7 @@ function startAgent() {
       hasOutput = true;
       ws.send(JSON.stringify({
         type: "LOG",
+        deviceName,
         message: `[ERROR] ${data.toString()}`
       }));
     });
@@ -169,6 +189,7 @@ function startAgent() {
     process.on("error", (err) => {
       ws.send(JSON.stringify({
         type: "LOG",
+        deviceName,
         message: `[EXEC ERROR] ${err.message}`
       }));
     });
@@ -176,6 +197,7 @@ function startAgent() {
     process.on("close", (code) => {
       ws.send(JSON.stringify({
         type: "LOG",
+        deviceName,
         message: `Command execution finished with code: ${code}`
       }));
 
