@@ -1,0 +1,12 @@
+{
+  "name": "vortix",
+  "version": "1.0.0",
+  "description": "AI OS Control CLI",
+  "bin": {
+    "vortix": "./bin/vortix.js"
+  },
+  "type": "module",
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}
