@@ -1,19 +1,20 @@
-const dashboardClients = new Set();
-
-
 const WebSocket = require("ws");
-const { v4: uuidv4 } = require("uuid");
 const readline = require("readline");
-const OpenAI = require("openai");
+const axios = require("axios");
+const os = require("os");
+const path = require("path");
 
+// Use environment PORT for cloud deployment, fallback to 8080 for local
+const PORT = process.env.PORT || 8080;
 
-const wss = new WebSocket.Server({ port: 8080 });
-
-console.log("Backend running on ws://localhost:8080");
-
+const dashboardClients = new Set();
 const devices = new Map();
 // pendingResults holds awaiting resolvers for EXECUTE_RESULT from agents
 const pendingResults = new Map(); // deviceName -> [{ command, resolve, reject, timer }]
+
+const wss = new WebSocket.Server({ port: PORT });
+
+console.log(`Backend running on port ${PORT}`);
 
 function waitForExecuteResult(deviceName, command, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
@@ -43,68 +44,68 @@ wss.on("connection", (ws, req) => {
 
   // ===== DASHBOARD CONNECTION =====
   if (clientType === "dashboard") {
-  dashboardClients.add(ws);
-  console.log("Dashboard connected");
-  // Send initial device list to newly connected dashboard
-  broadcastDevices();
+    dashboardClients.add(ws);
+    console.log("Dashboard connected");
+    // Send initial device list to newly connected dashboard
+    broadcastDevices();
 
-  ws.on("message", async (message) => {
-    const data = JSON.parse(message);
-    if (data.type === "FORCE_EXECUTE") {
-  const targetDevice = [...devices.values()].find(
-    (d) =>
-      d.deviceName === data.deviceName &&
-      d.status === "online"
-  );
+    ws.on("message", async (message) => {
+      const data = JSON.parse(message);
+      if (data.type === "FORCE_EXECUTE") {
+        const targetDevice = [...devices.values()].find(
+          (d) =>
+            d.deviceName === data.deviceName &&
+            d.status === "online"
+        );
 
-  if (!targetDevice) return;
+        if (!targetDevice) return;
 
-  targetDevice.ws.send(
-    JSON.stringify({
-      type: "EXECUTE",
-      command: data.command,
-    })
-  );
+        targetDevice.ws.send(
+          JSON.stringify({
+            type: "EXECUTE",
+            command: data.command,
+          })
+        );
 
-  console.log("Force executed dangerous command");
-}
+        console.log("Force executed dangerous command");
+      }
 
-    // if (data.type === "COMMAND") {
-    //   const targetDevice = [...devices.values()].find(
-    //     (d) =>
-    //       d.deviceName === data.deviceName &&
-    //       d.status === "online"
-    //   );
+      // if (data.type === "COMMAND") {
+      //   const targetDevice = [...devices.values()].find(
+      //     (d) =>
+      //       d.deviceName === data.deviceName &&
+      //       d.status === "online"
+      //   );
 
-    //   if (!targetDevice) {
-    //     console.log("Target device not found or offline");
-    //     return;
-    //   }
-    //    if (isDangerousCommand(data.command)) {
-    // ws.send(
-    //     JSON.stringify({
-    //     type: "APPROVAL_REQUIRED",
-    //     deviceName: data.deviceName,
-    //     command: data.command
-    //     })
-    // );
+      //   if (!targetDevice) {
+      //     console.log("Target device not found or offline");
+      //     return;
+      //   }
+      //    if (isDangerousCommand(data.command)) {
+      // ws.send(
+      //     JSON.stringify({
+      //     type: "APPROVAL_REQUIRED",
+      //     deviceName: data.deviceName,
+      //     command: data.command
+      //     })
+      // );
 
-    // console.log("Dangerous command detected, approval required");
-    // return;
-    // }
+      // console.log("Dangerous command detected, approval required");
+      // return;
+      // }
 
-    //   targetDevice.ws.send(
-    //     JSON.stringify({
-    //       type: "EXECUTE",
-    //       command: data.command,
-    //     })
-    //   );
+      //   targetDevice.ws.send(
+      //     JSON.stringify({
+      //       type: "EXECUTE",
+      //       command: data.command,
+      //     })
+      //   );
 
-    //   console.log(
-    //     `Dashboard sent command to ${data.deviceName}`
-    //   );
-    // }
-    if (data.type === "APPROVE_PLAN") {
+      //   console.log(
+      //     `Dashboard sent command to ${data.deviceName}`
+      //   );
+      // }
+      if (data.type === "APPROVE_PLAN") {
         const targetDevice = [...devices.values()].find(
           (d) =>
             d.deviceName === data.deviceName &&
@@ -125,7 +126,7 @@ wss.on("connection", (ws, req) => {
           return;
         }
 
-       console.log("APPROVE_PLAN received:", data.steps);
+        console.log("APPROVE_PLAN received:", data.steps);
 
         // Notify all dashboard clients execution started
         dashboardClients.forEach((client) => {
@@ -144,7 +145,7 @@ wss.on("connection", (ws, req) => {
             // Send command EXACTLY as provided - don't modify it
             const commandToExecute = step.command || step;
             console.log("Sending EXECUTE to agent for:", commandToExecute);
-            
+
             targetDevice.ws.send(
               JSON.stringify({
                 type: "EXECUTE",
@@ -209,62 +210,68 @@ wss.on("connection", (ws, req) => {
             });
           }
         })();
-    }
+      }
 
-    if (data.type === "PLAN") {
-      
-  const targetDevice = [...devices.values()].find(
-    (d) =>
-      d.deviceName === data.deviceName &&
-      d.status === "online"
-  );
+      if (data.type === "PLAN") {
 
-  if (!targetDevice) {
-    console.log("Device not found or offline");
+        const targetDevice = [...devices.values()].find(
+          (d) =>
+            d.deviceName === data.deviceName &&
+            d.status === "online"
+        );
+
+        if (!targetDevice) {
+          console.log("Device not found or offline");
+          return;
+        }
+
+        try {
+          const plan = await generatePlan(
+            data.command,
+            targetDevice.platform || "win32"
+          );
+          console.log("Generated plan:", plan.steps);
+
+          // SEND PLAN PREVIEW TO DASHBOARD - wait for approval
+          ws.send(
+            JSON.stringify({
+              type: "PLAN_PREVIEW",
+              deviceName: data.deviceName,
+              steps: plan.steps
+            })
+          );
+
+          console.log("AI Plan sent for approval:", plan);
+        } catch (err) {
+          console.error("AI planning error:", err.message);
+
+          // Send user-friendly error message
+          const errorMessage = err.message.includes("Ollama")
+            ? "AI planning is not available on this server. Please enter commands directly instead of using AI planning."
+            : `AI planning error: ${err.message}`;
+
+          // Notify dashboard of error
+          dashboardClients.forEach((client) => {
+            client.send(
+              JSON.stringify({
+                type: "PLAN_ERROR",
+                deviceName: data.deviceName,
+                error: errorMessage
+              })
+            );
+          });
+        }
+      }
+
+    });
+
+    ws.on("close", () => {
+      dashboardClients.delete(ws);
+      console.log("Dashboard disconnected");
+    });
+
     return;
   }
-
-  try {
-    const plan = await generatePlan(
-      data.command,
-      targetDevice.platform || "win32"
-    );
-    console.log("Generated plan:", plan.steps);
-
-  // SEND PLAN PREVIEW TO DASHBOARD - wait for approval
-  ws.send(
-    JSON.stringify({
-      type: "PLAN_PREVIEW",
-      deviceName: data.deviceName,
-      steps: plan.steps
-    })
-  );
-
-  console.log("AI Plan sent for approval:", plan);
-  } catch (err) {
-    console.error("AI planning error:", err.message);
-    // Notify dashboard of error
-    dashboardClients.forEach((client) => {
-      client.send(
-        JSON.stringify({
-          type: "EXECUTION_FINISHED",
-          deviceName: data.deviceName,
-          error: err.message
-        })
-      );
-    });
-  }
-}
-
-  });
-
-  ws.on("close", () => {
-    dashboardClients.delete(ws);
-    console.log("Dashboard disconnected");
-  });
-
-  return;
-}
 
 
   // ===== AGENT CONNECTION =====
@@ -374,111 +381,64 @@ setInterval(() => {
   });
 }, 5000);
 
-// ---------- Terminal Command Interface ----------
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
-
-console.log("Type: send <DeviceName> <command>");
-
-rl.on("line", (input) => {
-  const [keyword, deviceName, ...cmdParts] = input.split(" ");
-  const command = cmdParts.join(" ");
-
-  if (keyword !== "send") {
-    console.log("Invalid command. Use: send <DeviceName> <command>");
-    return;
-  }
-
-  let targetDevice = null;
-
-  devices.forEach((device) => {
-    if (device.deviceName === deviceName && device.status === "online") {
-      targetDevice = device;
-    }
+// ---------- Terminal Command Interface (only in local development) ----------
+if (process.env.NODE_ENV !== 'production' && !process.env.RAILWAY_ENVIRONMENT) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
   });
 
-  if (!targetDevice) {
-    console.log("Device not found or offline.");
-    return;
-  }
+  console.log("Type: send <DeviceName> <command>");
 
-  targetDevice.ws.send(
-    JSON.stringify({
-      type: "EXECUTE",
-      command
-    })
-  );
+  rl.on("line", (input) => {
+    const [keyword, deviceName, ...cmdParts] = input.split(" ");
+    const command = cmdParts.join(" ");
 
-  console.log(`Command sent to ${deviceName}`);
-});
+    if (keyword !== "send") {
+      console.log("Invalid command. Use: send <DeviceName> <command>");
+      return;
+    }
 
-function isDangerousCommand(command) {
-  const dangerousPatterns = [
-    "rm -rf",
-    "format",
-    "shutdown",
-    "del /f",
-    "mkfs",
-    "diskpart"
-  ];
+    let targetDevice = null;
 
-  return dangerousPatterns.some((pattern) =>
-    command.toLowerCase().includes(pattern)
-  );
+    devices.forEach((device) => {
+      if (device.deviceName === deviceName && device.status === "online") {
+        targetDevice = device;
+      }
+    });
+
+    if (!targetDevice) {
+      console.log("Device not found or offline.");
+      return;
+    }
+
+    targetDevice.ws.send(
+      JSON.stringify({
+        type: "EXECUTE",
+        command
+      })
+    );
+
+    console.log(`Command sent to ${deviceName}`);
+  });
+} else {
+  console.log("Running in production mode - terminal interface disabled");
 }
-
-// async function generatePlan(userInput, platform) {
-//   const prompt = `
-// You are an AI OS command planner.
-
-// Convert the user request into structured JSON steps.
-
-// Return ONLY valid JSON in this format:
-
-// {
-//   "steps": [
-//     { "command": "..." }
-//   ]
-// }
-
-// Rules:
-// - If Windows, use Windows commands.
-// - If Mac, use Mac commands.
-// - No explanations.
-// - No markdown.
-// - Only JSON.
-
-// User Request: ${userInput}
-// Platform: ${platform}
-// `;
-
-//   const response = await openai.chat.completions.create({
-//     model: "gpt-4o-mini",
-//     messages: [{ role: "user", content: prompt }],
-//     temperature: 0
-//   });
-
-//   const text = response.choices[0].message.content;
-
-//   return JSON.parse(text);
-// }
-const axios = require("axios");
-const os = require("os");
-
 
 async function generatePlan(userInput, platform) {
   const homeDir = os.homedir();
-  const desktopPath = require("path").join(homeDir, "Desktop");
-  
+  const desktopPath = path.join(homeDir, "Desktop");
+
+  // Check if Ollama is available (only works locally)
+  const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
+
   const prompt = `
 You are an AI OS command planner. Generate EXACT Windows commands for the user's request.
 
 System Information:
 - Home Directory: ${homeDir}
 - Desktop Path: ${desktopPath}
-- Platform: Windows
+- Platform: ${platform}
 
 CRITICAL RULES:
 1. Return ONLY valid JSON in this format - nothing else
@@ -503,28 +463,34 @@ User Request: ${userInput}
 Return ONLY JSON:
 `;
 
-  const response = await axios.post(
-    "http://localhost:11434/api/generate",
-    {
-      model: "qwen2.5:7b",
-      prompt: prompt,
-      stream: false
+  try {
+    const response = await axios.post(
+      `${ollamaUrl}/api/generate`,
+      {
+        model: "qwen2.5:7b",
+        prompt: prompt,
+        stream: false
+      },
+      {
+        timeout: 10000 // 10 second timeout
+      }
+    );
+
+    const text = response.data.response.trim();
+    console.log("LLM raw output:", text);
+
+    // Extract JSON safely
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error("No valid JSON found in LLM output");
     }
-  );
 
-  const text = response.data.response.trim();
-
-console.log("LLM raw output:", text);
-
-// Extract JSON safely
-const jsonMatch = text.match(/\{[\s\S]*\}/);
-
-if (!jsonMatch) {
-  throw new Error("No valid JSON found in LLM output");
-}
-
-return JSON.parse(jsonMatch[0]);
-
+    return JSON.parse(jsonMatch[0]);
+  } catch (error) {
+    console.error("Ollama connection error:", error.message);
+    throw new Error("AI planning is not available. Ollama is not running or not accessible. Please use direct commands instead.");
+  }
 }
 
 
