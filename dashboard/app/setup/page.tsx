@@ -102,6 +102,34 @@ export default function SetupPage() {
 								2
 							</div>
 							<h4 className="text-lg font-semibold text-white">
+								Set Device Password
+							</h4>
+						</div>
+						<div className="ml-11">
+							<div className="bg-black/40 rounded-lg p-4 mb-3 flex items-center justify-between">
+								<code className="text-emerald-400 font-mono text-sm">
+									vortix login
+								</code>
+								<button
+									onClick={() => copyToClipboard("vortix login", "login")}
+									className="ml-4 px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 rounded-lg text-white transition border border-white/10">
+									{copiedCommand === "login" ? "✓ Copied" : "Copy"}
+								</button>
+							</div>
+							<p className="text-white/50 text-sm">
+								Set a password to protect your device. You'll need this password
+								to access the device from the dashboard.
+							</p>
+						</div>
+					</div>
+
+					{/* Step 3 */}
+					<div className="mb-8">
+						<div className="flex items-center gap-3 mb-3">
+							<div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-sm">
+								3
+							</div>
+							<h4 className="text-lg font-semibold text-white">
 								Start the Agent
 							</h4>
 						</div>
@@ -122,11 +150,11 @@ export default function SetupPage() {
 						</div>
 					</div>
 
-					{/* Step 3 */}
+					{/* Step 4 */}
 					<div className="mb-8">
 						<div className="flex items-center gap-3 mb-3">
 							<div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-sm">
-								3
+								4
 							</div>
 							<h4 className="text-lg font-semibold text-white">
 								Control Your Devices
@@ -139,16 +167,17 @@ export default function SetupPage() {
 								Open Dashboard
 							</Link>
 							<p className="text-white/50 text-sm mt-3">
-								Your connected devices will appear in the dashboard
+								Click on a device and enter its password to unlock and control
+								it
 							</p>
 						</div>
 					</div>
 
-					{/* Step 4 - Testing */}
+					{/* Step 5 - Testing */}
 					<div>
 						<div className="flex items-center gap-3 mb-3">
 							<div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-sm">
-								4
+								5
 							</div>
 							<h4 className="text-lg font-semibold text-white">
 								Test Your Setup
