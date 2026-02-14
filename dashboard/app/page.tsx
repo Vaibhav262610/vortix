@@ -118,11 +118,15 @@ export default function Home() {
 		setIsPlanning(true);
 		setIsExecuting(true);
 
+		// Get user's API key from localStorage
+		const userApiKey = localStorage.getItem("groq_api_key");
+
 		wsRef.current?.send(
 			JSON.stringify({
 				type: "PLAN",
 				deviceName: selectedDevice,
 				command,
+				apiKey: userApiKey || undefined, // Send user's API key if available
 			}),
 		);
 
@@ -149,17 +153,33 @@ export default function Home() {
 	return (
 		<div className="min-h-screen bg-[#0d0d0f] text-white">
 			{/* Header */}
-			<div className="border-b border-white/10 bg-black/20 backdrop-blur-sm">
+			<div className="border-b border-white/10 bg-black/20 backdrop-blur-sm sticky top-0 z-30">
 				<div className="container mx-auto px-4 py-4 flex items-center justify-between">
-					<div>
-						<h1 className="text-2xl font-bold text-white">Vortix</h1>
-						<p className="text-xs text-white/50">Remote OS Control</p>
+					<div className="flex items-center gap-4">
+						<div>
+							<h1 className="text-2xl font-bold text-white">Vortix</h1>
+							<p className="text-xs text-white/50">Remote OS Control</p>
+						</div>
 					</div>
-					<a
-						href="/setup"
-						className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
-						Setup Guide
-					</a>
+					<div className="flex items-center gap-3">
+						<a
+							href="/setup"
+							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
+							📚 Setup Guide
+						</a>
+						<a
+							href="/settings"
+							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
+							⚙️ Settings
+						</a>
+						<a
+							href="https://github.com/Vaibhav262610"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="px-4 py-2 text-sm bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 border border-emerald-500/30 rounded-lg text-white transition shadow-lg shadow-emerald-600/20">
+							💬 Contact
+						</a>
+					</div>
 				</div>
 			</div>
 
@@ -309,17 +329,32 @@ export default function Home() {
 			<div className="mx-auto max-w-5xl px-5 py-8 sm:px-6 sm:py-10">
 				{/* Header */}
 				<header className="mb-8 flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-6">
-					<h1 className="text-xl font-semibold tracking-tight text-white/95 sm:text-2xl">
-						<b>Vortix</b> Dashboard
-					</h1>
+					<div>
+						<h1 className="text-xl font-semibold tracking-tight text-white/95 sm:text-2xl">
+							Control Panel
+						</h1>
+						<p className="text-sm text-white/50 mt-1">
+							Manage and control your connected devices
+						</p>
+					</div>
+					<div className="flex items-center gap-2">
+						<div className="px-3 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-600/30">
+							<span className="text-xs text-emerald-400 font-medium">
+								{devices.length} {devices.length === 1 ? "Device" : "Devices"}
+							</span>
+						</div>
+					</div>
 				</header>
 
 				<div className="grid gap-6 lg:grid-cols-[280px_1fr]">
 					{/* Devices — glass panel */}
-					<div className="glass rounded-2xl p-5 sm:p-6">
-						<p className="mb-4 text-xs font-medium uppercase tracking-widest text-white/45">
-							Select Your Device
-						</p>
+					<div className="glass rounded-2xl p-5 sm:p-6 h-fit">
+						<div className="flex items-center justify-between mb-4">
+							<p className="text-xs font-medium uppercase tracking-widest text-white/45">
+								Your Devices
+							</p>
+							<div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+						</div>
 						{devices.length === 0 ? (
 							<div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-6 text-center">
 								<div className="mb-4 text-4xl">🚀</div>
@@ -331,7 +366,7 @@ export default function Home() {
 								</p>
 								<a
 									href="/setup"
-									className="inline-block px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-lg transition">
+									className="inline-block px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-lg transition shadow-lg shadow-emerald-600/20">
 									View Setup Guide →
 								</a>
 							</div>
@@ -342,10 +377,10 @@ export default function Home() {
 										<button
 											type="button"
 											onClick={() => setSelectedDevice(device.deviceName)}
-											className={`flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
+											className={`flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-all ${
 												selectedDevice === device.deviceName
-													? "glass-strong text-white"
-													: "text-white/80 hover:bg-white/[0.06]"
+													? "glass-strong text-white shadow-lg shadow-emerald-600/10 border border-emerald-600/30"
+													: "text-white/80 hover:bg-white/[0.06] border border-transparent"
 											}`}>
 											<span
 												className={`h-2 w-2 shrink-0 rounded-full ${
@@ -376,39 +411,47 @@ export default function Home() {
 					<div className="flex flex-col gap-6">
 						{/* Command — glass bar */}
 						<div className="glass rounded-2xl p-5 sm:p-6">
-							<p className="mb-3 text-xs font-medium uppercase tracking-widest text-white/45">
-								Send command
-							</p>
+							<div className="flex items-center justify-between mb-3">
+								<p className="text-xs font-medium uppercase tracking-widest text-white/45">
+									Send Command
+								</p>
+								{selectedDevice && (
+									<div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-emerald-600/10 border border-emerald-600/30">
+										<div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+										<span className="text-xs text-emerald-400 font-medium">
+											{selectedDevice}
+										</span>
+									</div>
+								)}
+							</div>
 							<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
 								<input
 									value={command}
 									onChange={(e) => setCommand(e.target.value)}
 									onKeyDown={(e) => e.key === "Enter" && sendCommand()}
-									placeholder="Type a command…"
-									className="glass-input flex-1 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/20"
+									placeholder="Type a command or describe what you want to do..."
+									className="glass-input flex-1 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 border border-white/10"
 								/>
 								<button
 									type="button"
 									onClick={sendCommand}
 									disabled={isExecuting || isPlanning || !selectedDevice}
-									className={`rounded-xl border px-4 py-3 text-sm font-medium backdrop-blur-sm transition focus:outline-none focus:ring-2 sm:shrink-0 ${
+									className={`rounded-xl px-6 py-3 text-sm font-medium backdrop-blur-sm transition focus:outline-none focus:ring-2 sm:shrink-0 shadow-lg ${
 										isExecuting || isPlanning
-											? "cursor-not-allowed border-cyan-500/40 bg-cyan-500/10 text-cyan-300 focus:ring-cyan-400/20"
-											: "border-white/10 bg-white/10 text-white/95 hover:bg-white/15 focus:ring-white/20"
+											? "cursor-not-allowed bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 focus:ring-cyan-400/20"
+											: "bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white border border-emerald-500/30 focus:ring-emerald-500/50 shadow-emerald-600/20"
 									}`}>
 									{isExecuting
-										? "Executing..."
+										? "⚡ Executing..."
 										: isPlanning
-											? "Planning..."
+											? "🤖 Planning..."
 											: "Send Command"}
 								</button>
 							</div>
-							{selectedDevice && (
-								<p className="mt-3 text-xs text-white/45">
-									Selected Device:{" "}
-									<span className="font-mono text-white/70">
-										{selectedDevice}
-									</span>
+							{!selectedDevice && (
+								<p className="mt-3 text-xs text-orange-400/70 flex items-center gap-2">
+									<span>⚠️</span>
+									<span>Please select a device first</span>
 								</p>
 							)}
 						</div>

@@ -21,13 +21,37 @@ export default function SetupPage() {
 						<h1 className="text-2xl font-bold text-white">Vortix</h1>
 						<p className="text-xs text-white/50">Remote OS Control</p>
 					</div>
-					<Link
-						href="/"
-						className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
-						← Back to Dashboard
-					</Link>
+					<div className="flex items-center gap-3">
+						<Link
+							href="/"
+							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
+							← Back to Dashboard
+						</Link>
+						<a
+							href="https://github.com/Vaibhav262610"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="px-4 py-2 text-sm bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 border border-emerald-500/30 rounded-lg text-white transition shadow-lg shadow-emerald-600/20">
+							💬 Contact
+						</a>
+					</div>
 				</div>
 			</div>
+
+			{/* Background: soft gradient + grain */}
+			<div
+				className="fixed inset-0 -z-10"
+				style={{
+					background:
+						"radial-gradient(ellipse 100% 80% at 50% -20%, rgba(45, 55, 72, 0.4), transparent 50%), linear-gradient(180deg, #0d0d0f 0%, #12121a 100%)",
+				}}
+			/>
+			<div
+				className="fixed inset-0 -z-10 opacity-[0.02]"
+				style={{
+					backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+				}}
+			/>
 
 			<div className="container mx-auto px-4 py-12 max-w-4xl">
 				{/* Hero */}

@@ -226,9 +226,13 @@ wss.on("connection", (ws, req) => {
         }
 
         try {
+          // Use user-provided API key if available, otherwise use server's key
+          const userApiKey = data.apiKey || null;
+
           const plan = await generatePlan(
             data.command,
-            targetDevice.platform || "win32"
+            targetDevice.platform || "win32",
+            userApiKey
           );
           console.log("Generated plan:", plan.steps);
 
@@ -438,7 +442,7 @@ if (process.env.NODE_ENV !== 'production' && !process.env.RAILWAY_ENVIRONMENT) {
   console.log("Running in production mode - terminal interface disabled");
 }
 
-async function generatePlan(userInput, platform) {
+async function generatePlan(userInput, platform, userApiKey = null) {
   const homeDir = os.homedir();
   const desktopPath = path.join(homeDir, "Desktop");
 
@@ -494,12 +498,12 @@ User Request: ${userInput}
 Return ONLY JSON with executable commands:
 `;
 
-  // Check for Groq API key first (cloud), fallback to Ollama (local)
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  // Priority: user-provided API key > server environment variable > Ollama fallback
+  const GROQ_API_KEY = userApiKey || process.env.GROQ_API_KEY;
 
   if (GROQ_API_KEY) {
     // Use Groq API (free cloud option)
-    console.log("Using Groq API for AI planning");
+    console.log("Using Groq API for AI planning" + (userApiKey ? " (user-provided key)" : " (server key)"));
 
     try {
       const response = await axios.post(
@@ -536,6 +540,11 @@ Return ONLY JSON with executable commands:
       return JSON.parse(jsonMatch[0]);
     } catch (error) {
       console.error("Groq API error:", error.message);
+
+      if (error.response?.status === 401) {
+        throw new Error("Invalid API key. Please check your Groq API key in Settings.");
+      }
+
       throw new Error("AI planning failed. Please check your Groq API key or use direct commands.");
     }
   } else {
