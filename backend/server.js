@@ -555,12 +555,17 @@ function broadcastDevicesToDashboard(dashboardWs) {
   const deviceList = [];
 
   devices.forEach((device, deviceId) => {
+    const isAuthenticated = dashboardWs.authenticatedDevices.has(deviceId);
+    console.log(`Device ${deviceId}: authenticated=${isAuthenticated}`);
+
     deviceList.push({
       deviceName: device.deviceName,
       status: device.status,
-      authenticated: dashboardWs.authenticatedDevices.has(deviceId)
+      authenticated: isAuthenticated
     });
   });
+
+  console.log('Broadcasting devices to dashboard:', deviceList);
 
   dashboardWs.send(JSON.stringify({
     type: "DEVICES",

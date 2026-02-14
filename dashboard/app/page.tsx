@@ -58,6 +58,12 @@ export default function Home() {
 			console.log("Message received:", data.type, data);
 
 			if (data.type === "DEVICES") {
+				console.log("Devices received:", data.devices);
+				data.devices.forEach((device: Device) => {
+					console.log(
+						`Device: ${device.deviceName}, authenticated: ${device.authenticated}, status: ${device.status}`,
+					);
+				});
 				setDevices(data.devices);
 			}
 
@@ -171,13 +177,25 @@ export default function Home() {
 	};
 
 	const handleDeviceClick = (device: Device) => {
+		console.log(
+			"Device clicked:",
+			device.deviceName,
+			"authenticated:",
+			device.authenticated,
+		);
+
 		if (!device.authenticated) {
 			// Show password dialog
+			console.log("Opening auth dialog for:", device.deviceName);
 			setAuthDialog({
 				isOpen: true,
 				deviceName: device.deviceName,
 			});
 		} else {
+			console.log(
+				"Device already authenticated, selecting:",
+				device.deviceName,
+			);
 			setSelectedDevice(device.deviceName);
 		}
 	};
