@@ -173,7 +173,7 @@ export default function SetupPage() {
 				</div>
 
 				{/* Free API Notice */}
-				<div className="glass rounded-2xl border border-emerald-600/30 bg-emerald-600/5 p-6 mb-8">
+				{/* <div className="glass rounded-2xl border border-emerald-600/30 bg-emerald-600/5 p-6 mb-8">
 					<div className="flex items-start gap-3">
 						<div className="flex-shrink-0 w-10 h-10 rounded-lg bg-emerald-600/20 flex items-center justify-center">
 							<svg
@@ -201,6 +201,58 @@ export default function SetupPage() {
 							<p className="text-emerald-200/60 text-xs">
 								Note: This free API will be removed later. You'll be notified
 								when you need to add your own API key.
+							</p>
+						</div>
+					</div>
+				</div> */}
+
+				{/* Development Notice */}
+				<div className="glass rounded-2xl border border-orange-600/30 bg-orange-600/5 p-6 mb-8">
+					<div className="flex items-start gap-3">
+						{/* <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-orange-600/20 flex items-center justify-center">
+							<svg
+								className="w-5 h-5 text-orange-400"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24">
+								<path
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									strokeWidth={2}
+									d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+								/>
+							</svg>
+						</div> */}
+						<div className="flex-1">
+							<h4 className="text-lg font-semibold text-orange-300 mb-2">
+								Development Phase
+							</h4>
+							<p className="text-orange-200/80 text-sm mb-3">
+								Vortix is currently in active development. Some AI-generated
+								commands or natural language prompts may not work as expected.
+							</p>
+							<p className="text-orange-200/80 text-sm mb-3">
+								For best results, try using direct terminal commands for now:
+							</p>
+							<div className="space-y-2">
+								<div className="bg-black/30 rounded-lg p-2 border border-orange-600/20">
+									<code className="text-orange-300 font-mono text-xs">
+										dir C:\Users\YourName\Desktop
+									</code>
+								</div>
+								<div className="bg-black/30 rounded-lg p-2 border border-orange-600/20">
+									<code className="text-orange-300 font-mono text-xs">
+										echo Hello World &gt; C:\Users\YourName\Desktop\test.txt
+									</code>
+								</div>
+								<div className="bg-black/30 rounded-lg p-2 border border-orange-600/20">
+									<code className="text-orange-300 font-mono text-xs">
+										start notepad
+									</code>
+								</div>
+							</div>
+							<p className="text-orange-200/60 text-xs mt-3">
+								We're continuously improving the AI command generation.
 							</p>
 						</div>
 					</div>
