@@ -429,9 +429,6 @@ async function generatePlan(userInput, platform) {
   const homeDir = os.homedir();
   const desktopPath = path.join(homeDir, "Desktop");
 
-  // Check if Ollama is available (only works locally)
-  const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
-
   const prompt = `
 You are an AI OS command planner. Generate EXACT Windows commands for the user's request.
 
@@ -450,10 +447,10 @@ CRITICAL RULES:
 
 CORRECT Examples:
 - "create hello.txt with html on desktop"
-  Response: {"steps": [{"command": "echo <!DOCTYPE html><html><head><title>Hello</title></head><body><h1>Hello</h1></body></html> > ${desktopPath}\\hello.txt"}]}
+  Response: {"steps": [{"command": "echo <!DOCTYPE html><html><head><title>Hello</title></head><body><h1>Hello</h1></body></html> > ${desktopPath}\\\\hello.txt"}]}
 
 - "create test file with hello world"  
-  Response: {"steps": [{"command": "echo hello world > ${homeDir}\\Desktop\\test.txt"}]}
+  Response: {"steps": [{"command": "echo hello world > ${homeDir}\\\\Desktop\\\\test.txt"}]}
 
 - "list desktop files"
   Response: {"steps": [{"command": "dir ${desktopPath}"}]}
@@ -463,33 +460,83 @@ User Request: ${userInput}
 Return ONLY JSON:
 `;
 
-  try {
-    const response = await axios.post(
-      `${ollamaUrl}/api/generate`,
-      {
-        model: "qwen2.5:7b",
-        prompt: prompt,
-        stream: false
-      },
-      {
-        timeout: 10000 // 10 second timeout
+  // Check for Groq API key first (cloud), fallback to Ollama (local)
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+  if (GROQ_API_KEY) {
+    // Use Groq API (free cloud option)
+    console.log("Using Groq API for AI planning");
+
+    try {
+      const response = await axios.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            {
+              role: "user",
+              content: prompt
+            }
+          ],
+          temperature: 0
+        },
+        {
+          headers: {
+            "Authorization": `Bearer ${GROQ_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          timeout: 30000
+        }
+      );
+
+      const text = response.data.choices[0].message.content.trim();
+      console.log("Groq AI output:", text);
+
+      // Extract JSON safely
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+      if (!jsonMatch) {
+        throw new Error("No valid JSON found in AI output");
       }
-    );
 
-    const text = response.data.response.trim();
-    console.log("LLM raw output:", text);
-
-    // Extract JSON safely
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-
-    if (!jsonMatch) {
-      throw new Error("No valid JSON found in LLM output");
+      return JSON.parse(jsonMatch[0]);
+    } catch (error) {
+      console.error("Groq API error:", error.message);
+      throw new Error("AI planning failed. Please check your Groq API key or use direct commands.");
     }
+  } else {
+    // Fallback to Ollama (local only)
+    console.log("Using Ollama for AI planning (local only)");
+    const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
 
-    return JSON.parse(jsonMatch[0]);
-  } catch (error) {
-    console.error("Ollama connection error:", error.message);
-    throw new Error("AI planning is not available. Ollama is not running or not accessible. Please use direct commands instead.");
+    try {
+      const response = await axios.post(
+        `${ollamaUrl}/api/generate`,
+        {
+          model: "qwen2.5:7b",
+          prompt: prompt,
+          stream: false
+        },
+        {
+          timeout: 10000
+        }
+      );
+
+      const text = response.data.response.trim();
+      console.log("Ollama output:", text);
+
+      // Extract JSON safely
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+      if (!jsonMatch) {
+        throw new Error("No valid JSON found in LLM output");
+      }
+
+      return JSON.parse(jsonMatch[0]);
+    } catch (error) {
+      console.error("Ollama connection error:", error.message);
+      throw new Error("AI planning is not available. Ollama is not running or not accessible. Please use direct commands instead.");
+    }
   }
 }
 
