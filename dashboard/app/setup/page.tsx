@@ -123,7 +123,7 @@ export default function SetupPage() {
 					</div>
 
 					{/* Step 3 */}
-					<div>
+					<div className="mb-8">
 						<div className="flex items-center gap-3 mb-3">
 							<div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-sm">
 								3
@@ -143,6 +143,67 @@ export default function SetupPage() {
 							</p>
 						</div>
 					</div>
+
+					{/* Step 4 - Testing */}
+					<div>
+						<div className="flex items-center gap-3 mb-3">
+							<div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-sm">
+								4
+							</div>
+							<h4 className="text-lg font-semibold text-white">
+								Test Your Setup
+							</h4>
+						</div>
+						<div className="ml-11">
+							<p className="text-white/50 text-sm mb-3">
+								Try these basic commands to verify everything is working:
+							</p>
+							<div className="space-y-2">
+								<div className="bg-black/40 rounded-lg p-3 border border-white/10">
+									<code className="text-emerald-400 font-mono text-sm">
+										open notepad
+									</code>
+									<p className="text-white/40 text-xs mt-1">
+										Opens Notepad application
+									</p>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				{/* Free API Notice */}
+				<div className="glass rounded-2xl border border-emerald-600/30 bg-emerald-600/5 p-6 mb-8">
+					<div className="flex items-start gap-3">
+						<div className="flex-shrink-0 w-10 h-10 rounded-lg bg-emerald-600/20 flex items-center justify-center">
+							<svg
+								className="w-5 h-5 text-emerald-400"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24">
+								<path
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									strokeWidth={2}
+									d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+								/>
+							</svg>
+						</div>
+						<div className="flex-1">
+							<h4 className="text-lg font-semibold text-emerald-300 mb-2">
+								Free AI Planning Available
+							</h4>
+							<p className="text-emerald-200/80 text-sm mb-3">
+								No need to enter any API key right now! The server is using a
+								free admin API key for AI planning. You can start using
+								AI-powered commands immediately.
+							</p>
+							<p className="text-emerald-200/60 text-xs">
+								Note: This free API will be removed later. You'll be notified
+								when you need to add your own API key.
+							</p>
+						</div>
+					</div>
 				</div>
 
 				{/* AI Planning Options */}
@@ -150,6 +211,9 @@ export default function SetupPage() {
 					<h3 className="text-2xl font-bold text-white mb-6">
 						AI Planning Setup (Optional)
 					</h3>
+					<p className="text-white/50 text-sm mb-6">
+						Want to use your own API key? Here are your options:
+					</p>
 
 					<div className="space-y-6">
 						{/* Option 1: Groq API */}
