@@ -275,10 +275,24 @@ wss.on("connection", (ws, req) => {
 
 
   // ===== AGENT CONNECTION =====
-  if (!token || !devices.has(token)) {
-    console.log("Unauthorized connection attempt");
+  if (!token) {
+    console.log("No token provided");
     ws.close();
     return;
+  }
+
+  // Auto-register device if not exists
+  if (!devices.has(token)) {
+    // Extract device name from token (format: device-hostname)
+    const deviceName = token.replace('device-', '').toUpperCase();
+    console.log(`Auto-registering new device: ${deviceName}`);
+
+    devices.set(token, {
+      deviceName,
+      status: "offline",
+      ws: null,
+      lastSeen: null
+    });
   }
 
   const device = devices.get(token);
@@ -361,9 +375,8 @@ function registerDevice(deviceName, token) {
   return token;
 }
 
-// Register one device manually for testing
-registerDevice("Test-Device");
-registerDevice("VAIBHAV-PC");
+// Devices register automatically when they connect
+// No need to pre-register devices here
 
 // ---------- Heartbeat Monitor ----------
 setInterval(() => {
