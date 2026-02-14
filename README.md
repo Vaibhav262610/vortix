@@ -1,162 +1,212 @@
-# Vortix - AI-Powered OS Control System
+# Vortix 🚀
 
-Remote command execution and device management powered by AI.
+AI-Powered Remote OS Control System
 
----
+Control your computers remotely from anywhere with a beautiful web dashboard and
+AI-powered command generation.
 
-## ⚡ Quick Start
-
-**Ready to deploy?** → [GET_STARTED.md](GET_STARTED.md)
-
-**Total time: ~17 minutes | Cost: $0/month**
+[![npm version](https://img.shields.io/npm/v/vortix.svg)](https://www.npmjs.com/package/vortix)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
-## 🚀 Quick Links
+## ✨ Features
 
-- **[Quick Start Guide](docs/QUICK_START.md)** - Get up and running in 5 minutes
-- **[Deployment Guide](docs/DEPLOYMENT.md)** - Detailed deployment instructions
-- **[Checklist](docs/CHECKLIST.md)** - Step-by-step deployment checklist
-- **[Architecture](docs/ARCHITECTURE.md)** - System design and data flow
-- **[Summary](docs/SUMMARY.md)** - Complete overview
+- 🖥️ **Remote Control**: Control multiple computers from a web dashboard
+- 🤖 **AI Commands**: Generate commands from natural language (experimental)
+- 🔒 **Secure**: Password-protected devices with SHA-256 hashing
+- ⚡ **Real-time**: WebSocket-based instant command execution
+- 📊 **Live Logs**: See command output in real-time
+- 🎨 **Modern UI**: Beautiful, responsive dashboard built with Next.js
 
-## 📦 What is Vortix?
+---
 
-Vortix is a distributed system that lets you control multiple computers remotely
-through a web dashboard. It uses AI to convert natural language requests into
-executable commands.
+## 🚀 Quick Start
 
-### Key Features
-
-- 🌐 **Web Dashboard** - Control all devices from one interface
-- 🤖 **AI Planning** - Convert natural language to commands
-- 📡 **Real-time** - WebSocket-based instant communication
-- 🔒 **Secure** - Token-based authentication
-- 📊 **Logging** - See command output in real-time
-- 🖥️ **Cross-platform** - Works on Windows, Mac, Linux
-
-## 🏗️ Architecture
-
-```
-┌─────────────┐     WebSocket      ┌──────────────┐
-│   Devices   │ ←─────────────────→ │   Backend    │
-│  (Agents)   │                     │  (Railway)   │
-└─────────────┘                     └──────────────┘
-                                           ↑
-                                           │ WebSocket
-                                           │
-                                    ┌──────────────┐
-                                    │  Dashboard   │
-                                    │  (Vercel)    │
-                                    └──────────────┘
-```
-
-## 📁 Project Structure
-
-```
-vortix/
-├── cli_vortix/      # npm package (CLI + Agent bundled)
-├── agent/           # Device agent (bundled with CLI)
-├── backend/         # WebSocket server (deploy to cloud)
-├── dashboard/       # Web UI (deploy to Vercel)
-└── docs/            # Documentation
-```
-
-## 🎯 Getting Started
-
-### For Users
-
-Install the CLI globally:
+### 1. Install CLI
 
 ```bash
 npm install -g vortix
 ```
 
-Start the agent on your device:
+### 2. Set Password
+
+```bash
+vortix login
+```
+
+### 3. Start Agent
 
 ```bash
 vortix start
 ```
 
-Open the dashboard and control your device!
+### 4. Open Dashboard
 
-### For Developers
-
-1. **Publish to npm**:
-
-```bash
-cd cli_vortix
-npm publish --access public
-```
-
-2. **Deploy backend**:
-
-```bash
-cd backend
-railway up
-```
-
-3. **Deploy dashboard**:
-
-```bash
-cd dashboard
-vercel
-```
-
-See [QUICK_START.md](docs/QUICK_START.md) for detailed instructions.
-
-## 📚 Documentation
-
-- **[QUICK_START.md](docs/QUICK_START.md)** - Fast setup (5 minutes)
-- **[DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Complete deployment guide
-- **[CHECKLIST.md](docs/CHECKLIST.md)** - Deployment checklist
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Technical architecture
-- **[SUMMARY.md](docs/SUMMARY.md)** - Project overview
-
-## 🛠️ Technology Stack
-
-- **CLI/Agent**: Node.js, WebSocket
-- **Backend**: Node.js, WebSocket Server, Ollama/OpenAI
-- **Dashboard**: Next.js, React, TypeScript, Tailwind CSS
-
-## 🔐 Security
-
-Current implementation uses basic hostname-based tokens. For production:
-
-- Implement JWT authentication
-- Add rate limiting
-- Validate all commands
-- Use HTTPS/WSS only
-- Add user permissions
-
-## 💰 Costs
-
-- npm: Free
-- Railway: Free tier (500 hrs/month)
-- Vercel: Free tier (unlimited)
-- **Total**: $0/month for hobby use
-
-## 🤝 Contributing
-
-Contributions welcome! Please read the documentation first.
-
-## 📄 License
-
-MIT
-
-## 🆘 Support
-
-- Check documentation in `/docs`
-- Open an issue on GitHub
-- See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for troubleshooting
-
-## 🎉 Next Steps
-
-1. Read [QUICK_START.md](docs/QUICK_START.md)
-2. Follow [CHECKLIST.md](docs/CHECKLIST.md)
-3. Deploy and test
-4. Share your feedback!
+Visit: [https://vortixredeploy.vercel.app](https://vortixredeploy.vercel.app)
 
 ---
 
-**Made with ❤️ for remote device management**
+## 📖 Documentation
+
+Full documentation available in [DOCUMENTATION.md](./DOCUMENTATION.md)
+
+- Installation & Setup
+- Usage Guide
+- Security Best Practices
+- API Reference
+- Troubleshooting
+- Development Guide
+
+---
+
+## 🏗️ Architecture
+
+```
+Dashboard (Vercel) ←→ Backend (Render) ←→ CLI Agent (Your PC)
+   Next.js              WebSocket           Node.js
+```
+
+---
+
+## 🛠️ Tech Stack
+
+- **CLI**: Node.js, WebSocket
+- **Backend**: Node.js, WebSocket Server, Groq API
+- **Dashboard**: Next.js 16, React 19, TypeScript, Tailwind CSS
+
+---
+
+## 📦 Project Structure
+
+```
+vortix/
+├── cli_vortix/     # npm package
+├── backend/        # WebSocket server
+├── dashboard/      # Next.js dashboard
+├── agent/          # Development agent
+└── docs/           # Documentation
+```
+
+---
+
+## 🔐 Security
+
+- Password-protected devices
+- SHA-256 password hashing
+- Per-session authentication
+- No plain-text password storage
+
+---
+
+## 🌐 Live Deployments
+
+- **Dashboard**: https://vortixredeploy.vercel.app
+- **Backend**: https://vortix.onrender.com
+- **npm Package**: https://www.npmjs.com/package/vortix
+
+---
+
+## 📝 Example Commands
+
+**Direct Commands:**
+
+```bash
+dir C:\Users\YourName\Desktop
+echo Hello World > test.txt
+start notepad
+```
+
+**AI-Powered (experimental):**
+
+```
+create a hello.html file on desktop
+show me all files in downloads folder
+open calculator
+```
+
+---
+
+## 🐛 Troubleshooting
+
+**Agent won't connect?**
+
+- Check internet connection
+- Verify backend is running
+- Restart agent: `vortix start`
+
+**Device shows as locked?**
+
+- Click device and enter password
+- Password is from `vortix login`
+
+**Need help?**
+
+- Check [DOCUMENTATION.md](./DOCUMENTATION.md)
+- Open an issue on GitHub
+
+---
+
+## 🚧 Development Status
+
+Currently in active development. Some AI features are experimental.
+
+**Stable:**
+
+- ✅ Remote command execution
+- ✅ Device management
+- ✅ Password authentication
+- ✅ Real-time logs
+
+**Experimental:**
+
+- 🚧 AI command generation
+- 🚧 Natural language processing
+
+---
+
+## 🔮 Roadmap
+
+- [ ] Database integration
+- [ ] User accounts
+- [ ] Command history
+- [ ] Multi-platform support (macOS, Linux)
+- [ ] Mobile app
+- [ ] File transfer
+
+---
+
+## 👨‍💻 Author
+
+**Vaibhav Rajpoot**
+
+- Email: vaibhavrajpoot2626@gmail.com
+- Portfolio: [vaibhavrajpoot.vercel.app](https://vaibhavrajpoot.vercel.app)
+- GitHub: [@Vaibhav262610](https://github.com/Vaibhav262610)
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details
+
+---
+
+## 🙏 Acknowledgments
+
+- Groq API for AI command generation
+- Render for backend hosting
+- Vercel for dashboard hosting
+- npm for package distribution
+
+---
+
+## 📊 Stats
+
+- **Version**: 1.0.2
+- **Downloads**: Check on [npm](https://www.npmjs.com/package/vortix)
+- **Status**: Active Development
+
+---
+
+**Made with ❤️ by Vaibhav Rajpoot**
