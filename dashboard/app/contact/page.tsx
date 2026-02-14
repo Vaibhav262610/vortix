@@ -64,23 +64,6 @@ export default function ContactPage() {
 					</div>
 
 					{/* Portfolio */}
-					<div className="glass rounded-2xl border border-white/10 p-8">
-						<div className="flex items-start gap-4">
-							<div className="flex-1">
-								<h3 className="text-xl font-bold text-white mb-2">Portfolio</h3>
-								<p className="text-white/60 text-sm mb-4">
-									Check out my other projects and work
-								</p>
-								<a
-									href="https://vaibhavrajpoot.vercel.app"
-									target="_blank"
-									rel="noopener noreferrer"
-									className="inline-block px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition">
-									Visit Portfolio
-								</a>
-							</div>
-						</div>
-					</div>
 
 					{/* GitHub */}
 					<div className="glass rounded-2xl border border-white/10 p-8">

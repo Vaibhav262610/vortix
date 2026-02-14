@@ -329,7 +329,7 @@ export default function Home() {
 				<header className="mb-8 flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-6">
 					<div>
 						<h1 className="text-xl font-semibold tracking-tight text-white/95 sm:text-2xl">
-							Control Panel
+							Vortix Dashboard
 						</h1>
 						<p className="text-sm text-white/50 mt-1">
 							Manage and control your connected devices
