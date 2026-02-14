@@ -3,14 +3,19 @@ const readline = require("readline");
 const axios = require("axios");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
 
 // Use environment PORT for cloud deployment, fallback to 8080 for local
 const PORT = process.env.PORT || 8080;
 
 const dashboardClients = new Set();
-const devices = new Map();
-// pendingResults holds awaiting resolvers for EXECUTE_RESULT from agents
-const pendingResults = new Map(); // deviceName -> [{ command, resolve, reject, timer }]
+const devices = new Map(); // deviceId -> { deviceName, password, status, ws, lastSeen }
+const pendingResults = new Map();
+
+// Helper to hash passwords
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
 
 const wss = new WebSocket.Server({ port: PORT });
 
@@ -44,21 +49,62 @@ wss.on("connection", (ws, req) => {
 
   // ===== DASHBOARD CONNECTION =====
   if (clientType === "dashboard") {
+    ws.authenticatedDevices = new Set(); // Track which devices this dashboard can access
     dashboardClients.add(ws);
     console.log("Dashboard connected");
-    // Send initial device list to newly connected dashboard
-    broadcastDevices();
 
     ws.on("message", async (message) => {
       const data = JSON.parse(message);
-      if (data.type === "FORCE_EXECUTE") {
-        const targetDevice = [...devices.values()].find(
-          (d) =>
-            d.deviceName === data.deviceName &&
-            d.status === "online"
-        );
 
-        if (!targetDevice) return;
+      // Dashboard authenticates to view a specific device
+      if (data.type === "AUTH_DEVICE") {
+        const { deviceName, password } = data;
+        const deviceId = `device-${deviceName.toLowerCase()}`;
+        const device = devices.get(deviceId);
+
+        if (!device) {
+          ws.send(JSON.stringify({
+            type: "AUTH_ERROR",
+            deviceName,
+            error: "Device not found"
+          }));
+          return;
+        }
+
+        if (device.passwordHash !== hashPassword(password)) {
+          ws.send(JSON.stringify({
+            type: "AUTH_ERROR",
+            deviceName,
+            error: "Invalid password"
+          }));
+          return;
+        }
+
+        // Authentication successful
+        ws.authenticatedDevices.add(deviceId);
+        ws.send(JSON.stringify({
+          type: "AUTH_SUCCESS",
+          deviceName
+        }));
+
+        // Send updated device list
+        broadcastDevicesToDashboard(ws);
+        return;
+      }
+
+      if (data.type === "FORCE_EXECUTE") {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          ws.send(JSON.stringify({
+            type: "ERROR",
+            message: "Not authenticated for this device"
+          }));
+          return;
+        }
+
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== "online") return;
 
         targetDevice.ws.send(
           JSON.stringify({
@@ -66,85 +112,40 @@ wss.on("connection", (ws, req) => {
             command: data.command,
           })
         );
-
-        console.log("Force executed dangerous command");
       }
 
-      // if (data.type === "COMMAND") {
-      //   const targetDevice = [...devices.values()].find(
-      //     (d) =>
-      //       d.deviceName === data.deviceName &&
-      //       d.status === "online"
-      //   );
-
-      //   if (!targetDevice) {
-      //     console.log("Target device not found or offline");
-      //     return;
-      //   }
-      //    if (isDangerousCommand(data.command)) {
-      // ws.send(
-      //     JSON.stringify({
-      //     type: "APPROVAL_REQUIRED",
-      //     deviceName: data.deviceName,
-      //     command: data.command
-      //     })
-      // );
-
-      // console.log("Dangerous command detected, approval required");
-      // return;
-      // }
-
-      //   targetDevice.ws.send(
-      //     JSON.stringify({
-      //       type: "EXECUTE",
-      //       command: data.command,
-      //     })
-      //   );
-
-      //   console.log(
-      //     `Dashboard sent command to ${data.deviceName}`
-      //   );
-      // }
       if (data.type === "APPROVE_PLAN") {
-        const targetDevice = [...devices.values()].find(
-          (d) =>
-            d.deviceName === data.deviceName &&
-            d.status === "online"
-        );
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
 
-        if (!targetDevice) {
-          console.log("Target device not found or offline");
-          dashboardClients.forEach((client) => {
-            client.send(
-              JSON.stringify({
-                type: "EXECUTION_FINISHED",
-                deviceName: data.deviceName,
-                error: "Device not found or offline"
-              })
-            );
-          });
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          ws.send(JSON.stringify({
+            type: "ERROR",
+            message: "Not authenticated for this device"
+          }));
           return;
         }
 
-        console.log("APPROVE_PLAN received:", data.steps);
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== "online") {
+          ws.send(JSON.stringify({
+            type: "EXECUTION_FINISHED",
+            deviceName: data.deviceName,
+            error: "Device not found or offline"
+          }));
+          return;
+        }
 
-        // Notify all dashboard clients execution started
-        dashboardClients.forEach((client) => {
-          client.send(
-            JSON.stringify({
-              type: "EXECUTION_STARTED",
-              deviceName: data.deviceName
-            })
-          );
-        });
+        // Notify dashboard execution started
+        ws.send(JSON.stringify({
+          type: "EXECUTION_STARTED",
+          deviceName: data.deviceName
+        }));
 
-        // Execute steps sequentially: wait for agent to report EXECUTE_RESULT for each step
+        // Execute steps sequentially
         (async () => {
           let aborted = false;
           for (const step of data.steps) {
-            // Send command EXACTLY as provided - don't modify it
             const commandToExecute = step.command || step;
-            console.log("Sending EXECUTE to agent for:", commandToExecute);
 
             targetDevice.ws.send(
               JSON.stringify({
@@ -155,78 +156,57 @@ wss.on("connection", (ws, req) => {
 
             try {
               const result = await waitForExecuteResult(targetDevice.deviceName, commandToExecute);
-              console.log("Step result:", result);
 
-              // send step log to dashboards
-              dashboardClients.forEach((client) => {
-                client.send(
-                  JSON.stringify({
-                    type: "LOG",
-                    deviceName: targetDevice.deviceName,
-                    message: `✓ Step completed: ${commandToExecute} (exit code: ${result.code})`
-                  })
-                );
-              });
+              ws.send(JSON.stringify({
+                type: "LOG",
+                deviceName: targetDevice.deviceName,
+                message: `✓ Step completed: ${commandToExecute} (exit code: ${result.code})`
+              }));
 
-              // Continue even if code is not 0 - let user see the output
-              // but notify about non-zero exit
               if (typeof result.code === 'number' && result.code !== 0) {
-                console.log(`Step exited with code ${result.code}: ${commandToExecute}`);
+                console.log(`Step exited with code ${result.code}`);
               }
             } catch (err) {
-              console.error("Step execution error:", err.message);
-              dashboardClients.forEach((client) => {
-                client.send(
-                  JSON.stringify({
-                    type: "LOG",
-                    deviceName: targetDevice.deviceName,
-                    message: `✗ Step failed: ${commandToExecute} - ${err.message}`
-                  })
-                );
-              });
-              dashboardClients.forEach((client) => {
-                client.send(
-                  JSON.stringify({
-                    type: "EXECUTION_FINISHED",
-                    deviceName: data.deviceName,
-                    error: err.message
-                  })
-                );
-              });
+              ws.send(JSON.stringify({
+                type: "LOG",
+                deviceName: targetDevice.deviceName,
+                message: `✗ Step failed: ${commandToExecute} - ${err.message}`
+              }));
+              ws.send(JSON.stringify({
+                type: "EXECUTION_FINISHED",
+                deviceName: data.deviceName,
+                error: err.message
+              }));
               aborted = true;
               break;
             }
           }
 
           if (!aborted) {
-            dashboardClients.forEach((client) => {
-              client.send(
-                JSON.stringify({
-                  type: "EXECUTION_FINISHED",
-                  deviceName: data.deviceName,
-                  success: true
-                })
-              );
-            });
+            ws.send(JSON.stringify({
+              type: "EXECUTION_FINISHED",
+              deviceName: data.deviceName,
+              success: true
+            }));
           }
         })();
       }
 
       if (data.type === "PLAN") {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
 
-        const targetDevice = [...devices.values()].find(
-          (d) =>
-            d.deviceName === data.deviceName &&
-            d.status === "online"
-        );
-
-        if (!targetDevice) {
-          console.log("Device not found or offline");
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          ws.send(JSON.stringify({
+            type: "ERROR",
+            message: "Not authenticated for this device"
+          }));
           return;
         }
 
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== "online") return;
+
         try {
-          // Use user-provided API key if available, otherwise use server's key
           const userApiKey = data.apiKey || null;
 
           const plan = await generatePlan(
@@ -234,39 +214,24 @@ wss.on("connection", (ws, req) => {
             targetDevice.platform || "win32",
             userApiKey
           );
-          console.log("Generated plan:", plan.steps);
 
-          // SEND PLAN PREVIEW TO DASHBOARD - wait for approval
-          ws.send(
-            JSON.stringify({
-              type: "PLAN_PREVIEW",
-              deviceName: data.deviceName,
-              steps: plan.steps
-            })
-          );
-
-          console.log("AI Plan sent for approval:", plan);
+          ws.send(JSON.stringify({
+            type: "PLAN_PREVIEW",
+            deviceName: data.deviceName,
+            steps: plan.steps
+          }));
         } catch (err) {
-          console.error("AI planning error:", err.message);
-
-          // Send user-friendly error message
           const errorMessage = err.message.includes("Ollama")
-            ? "AI planning is not available on this server. Please enter commands directly instead of using AI planning."
+            ? "AI planning is not available. Please enter commands directly."
             : `AI planning error: ${err.message}`;
 
-          // Notify dashboard of error
-          dashboardClients.forEach((client) => {
-            client.send(
-              JSON.stringify({
-                type: "PLAN_ERROR",
-                deviceName: data.deviceName,
-                error: errorMessage
-              })
-            );
-          });
+          ws.send(JSON.stringify({
+            type: "PLAN_ERROR",
+            deviceName: data.deviceName,
+            error: errorMessage
+          }));
         }
       }
-
     });
 
     ws.on("close", () => {
@@ -274,9 +239,10 @@ wss.on("connection", (ws, req) => {
       console.log("Dashboard disconnected");
     });
 
+    // Send list of all devices (without sensitive info)
+    broadcastDevicesToDashboard(ws);
     return;
   }
-
 
   // ===== AGENT CONNECTION =====
   if (!token) {
@@ -285,55 +251,67 @@ wss.on("connection", (ws, req) => {
     return;
   }
 
-  // Auto-register device if not exists
-  if (!devices.has(token)) {
-    // Extract device name from token (format: device-hostname)
-    const deviceName = token.replace('device-', '').toUpperCase();
-    console.log(`Auto-registering new device: ${deviceName}`);
+  // Token format: device-hostname:password
+  const [deviceToken, password] = token.split(':');
 
-    devices.set(token, {
+  if (!deviceToken || !password) {
+    console.log("Invalid token format");
+    ws.close();
+    return;
+  }
+
+  const deviceId = deviceToken;
+  const deviceName = deviceToken.replace('device-', '').toUpperCase();
+
+  // Auto-register device or verify password
+  if (!devices.has(deviceId)) {
+    console.log(`Registering new device: ${deviceName}`);
+    devices.set(deviceId, {
       deviceName,
+      passwordHash: hashPassword(password),
       status: "offline",
       ws: null,
       lastSeen: null
     });
+  } else {
+    // Verify password
+    const device = devices.get(deviceId);
+    if (device.passwordHash !== hashPassword(password)) {
+      console.log(`Invalid password for device: ${deviceName}`);
+      ws.close();
+      return;
+    }
   }
 
-  const device = devices.get(token);
-
+  const device = devices.get(deviceId);
   device.ws = ws;
   device.status = "online";
   device.lastSeen = Date.now();
 
-  console.log(`Authenticated device: ${device.deviceName}`);
-
-  broadcastDevices(); // 🔥 notify dashboard
+  console.log(`Device connected: ${deviceName}`);
+  broadcastDevices();
 
   ws.on("message", (message) => {
     const data = JSON.parse(message);
 
     if (data.type === "HEARTBEAT") {
       device.lastSeen = Date.now();
-      console.log(`Heartbeat received from ${device.deviceName}`);
     }
 
     if (data.type === "LOG") {
-      console.log(`[${device.deviceName}] ${data.message}`);
-
-      // 🔥 send logs to dashboard
+      // Send logs only to authenticated dashboards
       dashboardClients.forEach((client) => {
-        client.send(
-          JSON.stringify({
+        if (client.authenticatedDevices.has(deviceId)) {
+          client.send(JSON.stringify({
             type: "LOG",
             deviceName: device.deviceName,
             message: data.message,
-          })
-        );
+          }));
+        }
       });
     }
 
     if (data.type === "EXECUTE_RESULT") {
-      console.log(`EXECUTE_RESULT received from ${device.deviceName}:`, data);
       const list = pendingResults.get(device.deviceName) || [];
       for (let i = 0; i < list.length; i++) {
         const entry = list[i];
@@ -355,8 +333,318 @@ wss.on("connection", (ws, req) => {
   ws.on("close", () => {
     device.status = "offline";
     console.log(`${device.deviceName} disconnected`);
-    broadcastDevices(); // 🔥 notify dashboard
+    broadcastDevices();
   });
+});
+
+ws.on("message", async (message) => {
+  const data = JSON.parse(message);
+  if (data.type === "FORCE_EXECUTE") {
+    const targetDevice = [...devices.values()].find(
+      (d) =>
+        d.deviceName === data.deviceName &&
+        d.status === "online"
+    );
+
+    if (!targetDevice) return;
+
+    targetDevice.ws.send(
+      JSON.stringify({
+        type: "EXECUTE",
+        command: data.command,
+      })
+    );
+
+    console.log("Force executed dangerous command");
+  }
+
+  // if (data.type === "COMMAND") {
+  //   const targetDevice = [...devices.values()].find(
+  //     (d) =>
+  //       d.deviceName === data.deviceName &&
+  //       d.status === "online"
+  //   );
+
+  //   if (!targetDevice) {
+  //     console.log("Target device not found or offline");
+  //     return;
+  //   }
+  //    if (isDangerousCommand(data.command)) {
+  // ws.send(
+  //     JSON.stringify({
+  //     type: "APPROVAL_REQUIRED",
+  //     deviceName: data.deviceName,
+  //     command: data.command
+  //     })
+  // );
+
+  // console.log("Dangerous command detected, approval required");
+  // return;
+  // }
+
+  //   targetDevice.ws.send(
+  //     JSON.stringify({
+  //       type: "EXECUTE",
+  //       command: data.command,
+  //     })
+  //   );
+
+  //   console.log(
+  //     `Dashboard sent command to ${data.deviceName}`
+  //   );
+  // }
+  if (data.type === "APPROVE_PLAN") {
+    const targetDevice = [...devices.values()].find(
+      (d) =>
+        d.deviceName === data.deviceName &&
+        d.status === "online"
+    );
+
+    if (!targetDevice) {
+      console.log("Target device not found or offline");
+      dashboardClients.forEach((client) => {
+        client.send(
+          JSON.stringify({
+            type: "EXECUTION_FINISHED",
+            deviceName: data.deviceName,
+            error: "Device not found or offline"
+          })
+        );
+      });
+      return;
+    }
+
+    console.log("APPROVE_PLAN received:", data.steps);
+
+    // Notify all dashboard clients execution started
+    dashboardClients.forEach((client) => {
+      client.send(
+        JSON.stringify({
+          type: "EXECUTION_STARTED",
+          deviceName: data.deviceName
+        })
+      );
+    });
+
+    // Execute steps sequentially: wait for agent to report EXECUTE_RESULT for each step
+    (async () => {
+      let aborted = false;
+      for (const step of data.steps) {
+        // Send command EXACTLY as provided - don't modify it
+        const commandToExecute = step.command || step;
+        console.log("Sending EXECUTE to agent for:", commandToExecute);
+
+        targetDevice.ws.send(
+          JSON.stringify({
+            type: "EXECUTE",
+            command: commandToExecute
+          })
+        );
+
+        try {
+          const result = await waitForExecuteResult(targetDevice.deviceName, commandToExecute);
+          console.log("Step result:", result);
+
+          // send step log to dashboards
+          dashboardClients.forEach((client) => {
+            client.send(
+              JSON.stringify({
+                type: "LOG",
+                deviceName: targetDevice.deviceName,
+                message: `✓ Step completed: ${commandToExecute} (exit code: ${result.code})`
+              })
+            );
+          });
+
+          // Continue even if code is not 0 - let user see the output
+          // but notify about non-zero exit
+          if (typeof result.code === 'number' && result.code !== 0) {
+            console.log(`Step exited with code ${result.code}: ${commandToExecute}`);
+          }
+        } catch (err) {
+          console.error("Step execution error:", err.message);
+          dashboardClients.forEach((client) => {
+            client.send(
+              JSON.stringify({
+                type: "LOG",
+                deviceName: targetDevice.deviceName,
+                message: `✗ Step failed: ${commandToExecute} - ${err.message}`
+              })
+            );
+          });
+          dashboardClients.forEach((client) => {
+            client.send(
+              JSON.stringify({
+                type: "EXECUTION_FINISHED",
+                deviceName: data.deviceName,
+                error: err.message
+              })
+            );
+          });
+          aborted = true;
+          break;
+        }
+      }
+
+      if (!aborted) {
+        dashboardClients.forEach((client) => {
+          client.send(
+            JSON.stringify({
+              type: "EXECUTION_FINISHED",
+              deviceName: data.deviceName,
+              success: true
+            })
+          );
+        });
+      }
+    })();
+  }
+
+  if (data.type === "PLAN") {
+
+    const targetDevice = [...devices.values()].find(
+      (d) =>
+        d.deviceName === data.deviceName &&
+        d.status === "online"
+    );
+
+    if (!targetDevice) {
+      console.log("Device not found or offline");
+      return;
+    }
+
+    try {
+      // Use user-provided API key if available, otherwise use server's key
+      const userApiKey = data.apiKey || null;
+
+      const plan = await generatePlan(
+        data.command,
+        targetDevice.platform || "win32",
+        userApiKey
+      );
+      console.log("Generated plan:", plan.steps);
+
+      // SEND PLAN PREVIEW TO DASHBOARD - wait for approval
+      ws.send(
+        JSON.stringify({
+          type: "PLAN_PREVIEW",
+          deviceName: data.deviceName,
+          steps: plan.steps
+        })
+      );
+
+      console.log("AI Plan sent for approval:", plan);
+    } catch (err) {
+      console.error("AI planning error:", err.message);
+
+      // Send user-friendly error message
+      const errorMessage = err.message.includes("Ollama")
+        ? "AI planning is not available on this server. Please enter commands directly instead of using AI planning."
+        : `AI planning error: ${err.message}`;
+
+      // Notify dashboard of error
+      dashboardClients.forEach((client) => {
+        client.send(
+          JSON.stringify({
+            type: "PLAN_ERROR",
+            deviceName: data.deviceName,
+            error: errorMessage
+          })
+        );
+      });
+    }
+  }
+
+});
+
+ws.on("close", () => {
+  dashboardClients.delete(ws);
+  console.log("Dashboard disconnected");
+});
+
+return;
+  }
+
+
+// ===== AGENT CONNECTION =====
+if (!token) {
+  console.log("No token provided");
+  ws.close();
+  return;
+}
+
+// Auto-register device if not exists
+if (!devices.has(token)) {
+  // Extract device name from token (format: device-hostname)
+  const deviceName = token.replace('device-', '').toUpperCase();
+  console.log(`Auto-registering new device: ${deviceName}`);
+
+  devices.set(token, {
+    deviceName,
+    status: "offline",
+    ws: null,
+    lastSeen: null
+  });
+}
+
+const device = devices.get(token);
+
+device.ws = ws;
+device.status = "online";
+device.lastSeen = Date.now();
+
+console.log(`Authenticated device: ${device.deviceName}`);
+
+broadcastDevices(); // 🔥 notify dashboard
+
+ws.on("message", (message) => {
+  const data = JSON.parse(message);
+
+  if (data.type === "HEARTBEAT") {
+    device.lastSeen = Date.now();
+    console.log(`Heartbeat received from ${device.deviceName}`);
+  }
+
+  if (data.type === "LOG") {
+    console.log(`[${device.deviceName}] ${data.message}`);
+
+    // 🔥 send logs to dashboard
+    dashboardClients.forEach((client) => {
+      client.send(
+        JSON.stringify({
+          type: "LOG",
+          deviceName: device.deviceName,
+          message: data.message,
+        })
+      );
+    });
+  }
+
+  if (data.type === "EXECUTE_RESULT") {
+    console.log(`EXECUTE_RESULT received from ${device.deviceName}:`, data);
+    const list = pendingResults.get(device.deviceName) || [];
+    for (let i = 0; i < list.length; i++) {
+      const entry = list[i];
+      if (entry.command === data.command) {
+        clearTimeout(entry.timer);
+        try {
+          entry.resolve(data);
+        } catch (e) {
+          entry.reject(e);
+        }
+        list.splice(i, 1);
+        break;
+      }
+    }
+    pendingResults.set(device.deviceName, list);
+  }
+});
+
+ws.on("close", () => {
+  device.status = "offline";
+  console.log(`${device.deviceName} disconnected`);
+  broadcastDevices(); // 🔥 notify dashboard
+});
 });
 
 // ---------- Device Registration ----------
@@ -585,22 +873,26 @@ Return ONLY JSON with executable commands:
 
 
 
-function broadcastDevices() {
+// Helper to broadcast device list to a specific dashboard
+function broadcastDevicesToDashboard(dashboardWs) {
   const deviceList = [];
 
-  devices.forEach((device) => {
+  devices.forEach((device, deviceId) => {
     deviceList.push({
       deviceName: device.deviceName,
       status: device.status,
+      authenticated: dashboardWs.authenticatedDevices.has(deviceId)
     });
   });
 
+  dashboardWs.send(JSON.stringify({
+    type: "DEVICES",
+    devices: deviceList,
+  }));
+}
+
+function broadcastDevices() {
   dashboardClients.forEach((client) => {
-    client.send(
-      JSON.stringify({
-        type: "DEVICES",
-        devices: deviceList,
-      })
-    );
+    broadcastDevicesToDashboard(client);
   });
 }

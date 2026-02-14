@@ -1,6 +1,9 @@
 const WebSocket = require("ws");
 const { exec } = require("child_process");
 const os = require("os");
+const readline = require("readline");
+const fs = require("fs");
+const path = require("path");
 
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
@@ -10,11 +13,60 @@ process.on("unhandledRejection", (err) => {
   console.error("Unhandled Rejection:", err);
 });
 
+const CONFIG_FILE = path.join(os.homedir(), '.vortix-config.json');
+
+// Load or create config
+function loadConfig() {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error("Error loading config:", err.message);
+  }
+  return {};
+}
+
+function saveConfig(config) {
+  try {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  } catch (err) {
+    console.error("Error saving config:", err.message);
+  }
+}
+
+function promptPassword() {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    rl.question('Set a password for this device: ', (password) => {
+      rl.close();
+      resolve(password.trim());
+    });
+  });
+}
+
 const command = process.argv[2];
 
 if (command === "login") {
-  console.log("Login is not required in this version.");
-  console.log("Just run: vortix start");
+  (async () => {
+    const password = await promptPassword();
+    if (!password) {
+      console.log("Password is required");
+      return;
+    }
+
+    const config = loadConfig();
+    config.password = password;
+    saveConfig(config);
+
+    console.log("Password saved successfully!");
+    console.log("You can now run: vortix start");
+    console.log("\nIMPORTANT: Use this same password in the dashboard to access this device.");
+  })();
   return;
 }
 
@@ -24,20 +76,28 @@ if (command === "start") {
 }
 
 console.log("Available commands:");
+console.log("  vortix login  - Set device password");
 console.log("  vortix start  - Start the agent");
-console.log("  vortix help   - Show help");
 
 function startAgent() {
-  const deviceName = os.hostname();
-  const token = `device-${deviceName.toLowerCase()}`;
+  const config = loadConfig();
 
-  console.log(`Connecting as device: ${deviceName}`);
-  console.log(`Using token: ${token}`);
+  if (!config.password) {
+    console.log("Please set a password first: vortix login");
+    return;
+  }
+
+  const deviceName = os.hostname();
+  const deviceToken = `device-${deviceName.toLowerCase()}`;
+  const token = `${deviceToken}:${config.password}`;
+
+  console.log(`Device: ${deviceName}`);
+  console.log("Connecting to backend...");
 
   // Production backend URL - Render deployment
   const BACKEND_URL = process.env.BACKEND_URL || 'wss://vortix.onrender.com';
 
-  const ws = new WebSocket(`${BACKEND_URL}?token=${token}`);
+  const ws = new WebSocket(`${BACKEND_URL}?token=${encodeURIComponent(token)}`);
 
   ws.on("open", () => {
     console.log("Authenticated and connected to backend");

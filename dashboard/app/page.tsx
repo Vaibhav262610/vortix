@@ -5,6 +5,7 @@ import { useEffect, useState, useRef } from "react";
 type Device = {
 	deviceName: string;
 	status: string;
+	authenticated: boolean;
 };
 
 type ApprovalDialog = {
@@ -13,11 +14,18 @@ type ApprovalDialog = {
 	deviceName: string;
 } | null;
 
+type AuthDialog = {
+	isOpen: boolean;
+	deviceName: string;
+} | null;
+
 export default function Home() {
 	const [isPlanning, setIsPlanning] = useState(false);
 	const [isExecuting, setIsExecuting] = useState(false);
 	const [planPreview, setPlanPreview] = useState<any[]>([]);
 	const [approvalDialog, setApprovalDialog] = useState<ApprovalDialog>(null);
+	const [authDialog, setAuthDialog] = useState<AuthDialog>(null);
+	const [authPassword, setAuthPassword] = useState("");
 
 	const [devices, setDevices] = useState<Device[]>([]);
 	const [logs, setLogs] = useState<string[]>([]);
@@ -51,6 +59,18 @@ export default function Home() {
 
 			if (data.type === "DEVICES") {
 				setDevices(data.devices);
+			}
+
+			if (data.type === "AUTH_SUCCESS") {
+				console.log("Device authenticated:", data.deviceName);
+				setAuthDialog(null);
+				setAuthPassword("");
+				// Refresh device list
+			}
+
+			if (data.type === "AUTH_ERROR") {
+				console.error("Auth error:", data.error);
+				alert(`Authentication failed: ${data.error}`);
 			}
 
 			if (data.type === "EXECUTION_STARTED") {
@@ -150,6 +170,30 @@ export default function Home() {
 		setApprovalDialog(null);
 	};
 
+	const handleDeviceClick = (device: Device) => {
+		if (!device.authenticated) {
+			// Show password dialog
+			setAuthDialog({
+				isOpen: true,
+				deviceName: device.deviceName,
+			});
+		} else {
+			setSelectedDevice(device.deviceName);
+		}
+	};
+
+	const handleAuthSubmit = () => {
+		if (!authDialog || !authPassword) return;
+
+		wsRef.current?.send(
+			JSON.stringify({
+				type: "AUTH_DEVICE",
+				deviceName: authDialog.deviceName,
+				password: authPassword,
+			}),
+		);
+	};
+
 	return (
 		<div className="min-h-screen bg-[#0d0d0f] text-white">
 			{/* Header */}
@@ -180,6 +224,52 @@ export default function Home() {
 					</div>
 				</div>
 			</div>
+
+			{/* Auth Dialog */}
+			{authDialog?.isOpen && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+					<div className="glass rounded-2xl border border-white/10 p-6 sm:p-8 max-w-md w-full mx-4 shadow-2xl">
+						<h3 className="text-lg font-semibold text-white mb-4">
+							Enter Device Password
+						</h3>
+						<p className="text-sm text-white/60 mb-4">
+							Device:{" "}
+							<span className="font-mono text-emerald-400">
+								{authDialog.deviceName}
+							</span>
+						</p>
+						<input
+							type="password"
+							value={authPassword}
+							onChange={(e) => setAuthPassword(e.target.value)}
+							onKeyDown={(e) => e.key === "Enter" && handleAuthSubmit()}
+							placeholder="Enter password..."
+							className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 mb-4"
+							autoFocus
+						/>
+						<div className="flex gap-3">
+							<button
+								onClick={() => {
+									setAuthDialog(null);
+									setAuthPassword("");
+								}}
+								className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-white/80 text-sm font-medium hover:bg-white/10 transition">
+								Cancel
+							</button>
+							<button
+								onClick={handleAuthSubmit}
+								disabled={!authPassword}
+								className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition ${
+									authPassword
+										? "bg-emerald-600 hover:bg-emerald-700 text-white"
+										: "bg-white/5 text-white/40 cursor-not-allowed"
+								}`}>
+								Unlock
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* Approval Toast - Top Right */}
 			{approvalDialog?.isOpen && (
@@ -373,29 +463,47 @@ export default function Home() {
 									<li key={index}>
 										<button
 											type="button"
-											onClick={() => setSelectedDevice(device.deviceName)}
+											onClick={() => handleDeviceClick(device)}
 											className={`flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-all ${
-												selectedDevice === device.deviceName
+												selectedDevice === device.deviceName &&
+												device.authenticated
 													? "glass-strong text-white shadow-lg shadow-emerald-600/10 border border-emerald-600/30"
 													: "text-white/80 hover:bg-white/[0.06] border border-transparent"
 											}`}>
-											<span
-												className={`h-2 w-2 shrink-0 rounded-full ${
-													device.status === "online"
-														? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"
-														: "bg-white/30"
-												}`}
-											/>
+											{device.authenticated ? (
+												<span
+													className={`h-2 w-2 shrink-0 rounded-full ${
+														device.status === "online"
+															? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"
+															: "bg-white/30"
+													}`}
+												/>
+											) : (
+												<svg
+													className="w-4 h-4 text-orange-400"
+													fill="none"
+													stroke="currentColor"
+													viewBox="0 0 24 24">
+													<path
+														strokeLinecap="round"
+														strokeLinejoin="round"
+														strokeWidth={2}
+														d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+													/>
+												</svg>
+											)}
 											<span className="min-w-0 truncate font-medium">
 												{device.deviceName}
 											</span>
 											<span
 												className={`ml-auto shrink-0 text-[11px] uppercase tracking-wider ${
-													device.status === "online"
-														? "text-emerald-400/90"
-														: "text-white/40"
+													device.authenticated
+														? device.status === "online"
+															? "text-emerald-400/90"
+															: "text-white/40"
+														: "text-orange-400/90"
 												}`}>
-												{device.status}
+												{device.authenticated ? device.status : "locked"}
 											</span>
 										</button>
 									</li>
