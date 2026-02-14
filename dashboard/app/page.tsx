@@ -31,7 +31,12 @@ export default function Home() {
 	useEffect(() => {
 		console.log("Connecting to backend WebSocket...");
 
-		const ws = new WebSocket("wss://vortix.onrender.com?type=dashboard");
+		// Use environment variable or fallback to Render URL
+		const backendWS =
+			process.env.NEXT_PUBLIC_BACKEND_WS || "wss://vortix.onrender.com";
+		console.log("Backend URL:", backendWS);
+
+		const ws = new WebSocket(`${backendWS}?type=dashboard`);
 		// console.log(isExecuting)
 
 		wsRef.current = ws;
@@ -57,6 +62,15 @@ export default function Home() {
 				console.log("Plan preview received:", data.steps);
 				setIsPlanning(false);
 				setPlanPreview(data.steps);
+			}
+
+			if (data.type === "PLAN_ERROR") {
+				console.error("Plan error:", data.error);
+				setIsPlanning(false);
+				setLogs((prev) => [...prev, `[ERROR] ${data.error}`]);
+				alert(
+					`AI Planning Error: ${data.error}\n\nPlease enter commands directly instead.`,
+				);
 			}
 
 			if (data.type === "APPROVAL_REQUIRED") {
@@ -109,7 +123,7 @@ export default function Home() {
 				type: "PLAN",
 				deviceName: selectedDevice,
 				command,
-			})
+			}),
 		);
 
 		setCommand("");
@@ -122,7 +136,7 @@ export default function Home() {
 					type: "FORCE_EXECUTE",
 					deviceName: approvalDialog.deviceName,
 					command: approvalDialog.command,
-				})
+				}),
 			);
 			setApprovalDialog(null);
 		}
@@ -134,6 +148,21 @@ export default function Home() {
 
 	return (
 		<div className="min-h-screen bg-[#0d0d0f] text-white">
+			{/* Header */}
+			<div className="border-b border-white/10 bg-black/20 backdrop-blur-sm">
+				<div className="container mx-auto px-4 py-4 flex items-center justify-between">
+					<div>
+						<h1 className="text-2xl font-bold text-white">Vortix</h1>
+						<p className="text-xs text-white/50">Remote OS Control</p>
+					</div>
+					<a
+						href="/setup"
+						className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
+						Setup Guide
+					</a>
+				</div>
+			</div>
+
 			{/* Approval Toast - Top Right */}
 			{approvalDialog?.isOpen && (
 				<div className="fixed top-4 right-4 z-50 max-w-sm animate-in slide-in-from-top-2 duration-300">
@@ -250,7 +279,7 @@ export default function Home() {
 											type: "APPROVE_PLAN",
 											deviceName: selectedDevice,
 											steps: planPreview,
-										})
+										}),
 									);
 									setPlanPreview([]);
 								}}
@@ -292,9 +321,20 @@ export default function Home() {
 							Select Your Device
 						</p>
 						{devices.length === 0 ? (
-							<p className="rounded-xl border border-dashed border-white/10 bg-black/20 py-8 text-center text-sm text-white/50">
-								No devices connected
-							</p>
+							<div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-6 text-center">
+								<div className="mb-4 text-4xl">🚀</div>
+								<p className="text-sm text-white/70 mb-4">
+									No devices connected yet
+								</p>
+								<p className="text-xs text-white/50 mb-4">
+									Install Vortix CLI and start an agent to see your devices here
+								</p>
+								<a
+									href="/setup"
+									className="inline-block px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-lg transition">
+									View Setup Guide →
+								</a>
+							</div>
 						) : (
 							<ul className="space-y-2">
 								{devices.map((device, index) => (
@@ -359,8 +399,8 @@ export default function Home() {
 									{isExecuting
 										? "Executing..."
 										: isPlanning
-										? "Planning..."
-										: "Send Command"}
+											? "Planning..."
+											: "Send Command"}
 								</button>
 							</div>
 							{selectedDevice && (
