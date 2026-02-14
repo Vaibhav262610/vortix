@@ -25,14 +25,12 @@ export default function SetupPage() {
 						<Link
 							href="/"
 							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
-							← Back to Dashboard
+							Back to Dashboard
 						</Link>
 						<a
-							href="https://github.com/Vaibhav262610"
-							target="_blank"
-							rel="noopener noreferrer"
-							className="px-4 py-2 text-sm bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 border border-emerald-500/30 rounded-lg text-white transition shadow-lg shadow-emerald-600/20">
-							💬 Contact
+							href="/contact"
+							className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 rounded-lg text-white transition">
+							Contact
 						</a>
 					</div>
 				</div>
@@ -66,7 +64,7 @@ export default function SetupPage() {
 
 				{/* Installation Steps */}
 				<div className="glass rounded-2xl border border-white/10 p-8 mb-8">
-					<h3 className="text-2xl font-bold text-white mb-6">🚀 Quick Setup</h3>
+					<h3 className="text-2xl font-bold text-white mb-6">Quick Setup</h3>
 
 					{/* Step 1 */}
 					<div className="mb-8">
@@ -138,7 +136,7 @@ export default function SetupPage() {
 							<Link
 								href="/"
 								className="inline-block px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition text-sm">
-								Open Dashboard →
+								Open Dashboard
 							</Link>
 							<p className="text-white/50 text-sm mt-3">
 								Your connected devices will appear in the dashboard
@@ -150,16 +148,13 @@ export default function SetupPage() {
 				{/* AI Planning Options */}
 				<div className="glass rounded-2xl border border-white/10 p-8">
 					<h3 className="text-2xl font-bold text-white mb-6">
-						🤖 AI Planning Setup (Optional)
+						AI Planning Setup (Optional)
 					</h3>
 
 					<div className="space-y-6">
 						{/* Option 1: Groq API */}
 						<div className="border border-white/10 rounded-xl p-6 bg-black/20">
 							<div className="flex items-start gap-4">
-								<div className="w-12 h-12 rounded-lg bg-emerald-600/20 flex items-center justify-center flex-shrink-0">
-									<span className="text-2xl">☁️</span>
-								</div>
 								<div className="flex-1">
 									<h4 className="text-lg font-semibold text-white mb-2">
 										Option 1: Use Groq API (Recommended)
@@ -201,9 +196,6 @@ export default function SetupPage() {
 						{/* Option 2: Local Ollama */}
 						<div className="border border-white/10 rounded-xl p-6 bg-black/20">
 							<div className="flex items-start gap-4">
-								<div className="w-12 h-12 rounded-lg bg-purple-600/20 flex items-center justify-center flex-shrink-0">
-									<span className="text-2xl">💻</span>
-								</div>
 								<div className="flex-1">
 									<h4 className="text-lg font-semibold text-white mb-2">
 										Option 2: Run Ollama Locally
@@ -250,9 +242,6 @@ export default function SetupPage() {
 						{/* Option 3: No AI */}
 						<div className="border border-white/10 rounded-xl p-6 bg-black/20">
 							<div className="flex items-start gap-4">
-								<div className="w-12 h-12 rounded-lg bg-slate-600/20 flex items-center justify-center flex-shrink-0">
-									<span className="text-2xl">⚡</span>
-								</div>
 								<div className="flex-1">
 									<h4 className="text-lg font-semibold text-white mb-2">
 										Option 3: Skip AI Planning
@@ -274,12 +263,10 @@ export default function SetupPage() {
 				<div className="text-center mt-12">
 					<Link
 						href="/"
-						className="inline-block px-8 py-3 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white rounded-xl font-semibold transition shadow-lg">
-						Get Started →
+						className="inline-block px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition">
+						Get Started
 					</Link>
-					<p className="text-white/40 text-sm mt-4">
-						Free and open source • No credit card required
-					</p>
+					<p className="text-white/40 text-sm mt-4">Free and open source</p>
 				</div>
 			</div>
 		</div>

@@ -165,19 +165,17 @@ export default function Home() {
 						<a
 							href="/setup"
 							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
-							📚 Setup Guide
+							Setup Guide
 						</a>
 						<a
 							href="/settings"
 							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
-							⚙️ Settings
+							Settings
 						</a>
 						<a
-							href="https://github.com/Vaibhav262610"
-							target="_blank"
-							rel="noopener noreferrer"
-							className="px-4 py-2 text-sm bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 border border-emerald-500/30 rounded-lg text-white transition shadow-lg shadow-emerald-600/20">
-							💬 Contact
+							href="/contact"
+							className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 rounded-lg text-white transition">
+							Contact
 						</a>
 					</div>
 				</div>
@@ -357,7 +355,6 @@ export default function Home() {
 						</div>
 						{devices.length === 0 ? (
 							<div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-6 text-center">
-								<div className="mb-4 text-4xl">🚀</div>
 								<p className="text-sm text-white/70 mb-4">
 									No devices connected yet
 								</p>
@@ -366,8 +363,8 @@ export default function Home() {
 								</p>
 								<a
 									href="/setup"
-									className="inline-block px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-lg transition shadow-lg shadow-emerald-600/20">
-									View Setup Guide →
+									className="inline-block px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-lg transition">
+									View Setup Guide
 								</a>
 							</div>
 						) : (
@@ -436,22 +433,21 @@ export default function Home() {
 									type="button"
 									onClick={sendCommand}
 									disabled={isExecuting || isPlanning || !selectedDevice}
-									className={`rounded-xl px-6 py-3 text-sm font-medium backdrop-blur-sm transition focus:outline-none focus:ring-2 sm:shrink-0 shadow-lg ${
+									className={`rounded-xl px-6 py-3 text-sm font-medium transition focus:outline-none focus:ring-2 sm:shrink-0 ${
 										isExecuting || isPlanning
-											? "cursor-not-allowed bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 focus:ring-cyan-400/20"
-											: "bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white border border-emerald-500/30 focus:ring-emerald-500/50 shadow-emerald-600/20"
+											? "cursor-not-allowed bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+											: "bg-emerald-600 hover:bg-emerald-700 text-white"
 									}`}>
 									{isExecuting
-										? "⚡ Executing..."
+										? "Executing..."
 										: isPlanning
-											? "🤖 Planning..."
+											? "Planning..."
 											: "Send Command"}
 								</button>
 							</div>
 							{!selectedDevice && (
-								<p className="mt-3 text-xs text-orange-400/70 flex items-center gap-2">
-									<span>⚠️</span>
-									<span>Please select a device first</span>
+								<p className="mt-3 text-xs text-orange-400/70">
+									Please select a device first
 								</p>
 							)}
 						</div>

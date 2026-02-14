@@ -43,7 +43,7 @@ export default function SettingsPage() {
 					<Link
 						href="/"
 						className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
-						← Back to Dashboard
+						Back to Dashboard
 					</Link>
 				</div>
 			</div>
@@ -75,9 +75,6 @@ export default function SettingsPage() {
 				{/* API Key Section */}
 				<div className="glass rounded-2xl border border-white/10 p-8 mb-6">
 					<div className="flex items-start gap-4 mb-6">
-						<div className="w-12 h-12 rounded-lg bg-emerald-600/20 flex items-center justify-center flex-shrink-0">
-							<span className="text-2xl">🔑</span>
-						</div>
 						<div className="flex-1">
 							<h3 className="text-xl font-bold text-white mb-2">
 								Groq API Key
@@ -116,12 +113,12 @@ export default function SettingsPage() {
 							<button
 								onClick={handleSave}
 								disabled={!apiKey.trim()}
-								className={`flex-1 px-6 py-3 rounded-xl font-medium transition shadow-lg ${
+								className={`flex-1 px-6 py-3 rounded-xl font-medium transition ${
 									apiKey.trim()
-										? "bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white shadow-emerald-600/20"
+										? "bg-emerald-600 hover:bg-emerald-700 text-white"
 										: "bg-white/5 text-white/40 cursor-not-allowed"
 								}`}>
-								{saved ? "✓ Saved!" : "Save API Key"}
+								{saved ? "Saved!" : "Save API Key"}
 							</button>
 							<button
 								onClick={handleClear}
@@ -132,9 +129,7 @@ export default function SettingsPage() {
 
 						<div className="mt-4 p-4 rounded-lg bg-blue-600/10 border border-blue-600/30">
 							<p className="text-sm text-blue-300 mb-2">
-								<span className="font-semibold">
-									💡 How to get your API key:
-								</span>
+								<span className="font-semibold">How to get your API key:</span>
 							</p>
 							<ol className="text-sm text-blue-200/80 space-y-1 list-decimal list-inside">
 								<li>
@@ -158,9 +153,6 @@ export default function SettingsPage() {
 				{/* About Section */}
 				<div className="glass rounded-2xl border border-white/10 p-8">
 					<div className="flex items-start gap-4 mb-6">
-						<div className="w-12 h-12 rounded-lg bg-purple-600/20 flex items-center justify-center flex-shrink-0">
-							<span className="text-2xl">ℹ️</span>
-						</div>
 						<div className="flex-1">
 							<h3 className="text-xl font-bold text-white mb-2">
 								About Vortix
@@ -176,14 +168,12 @@ export default function SettingsPage() {
 									target="_blank"
 									rel="noopener noreferrer"
 									className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white text-sm transition">
-									⭐ GitHub
+									GitHub
 								</a>
 								<a
-									href="https://github.com/Vaibhav262610"
-									target="_blank"
-									rel="noopener noreferrer"
-									className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white text-sm transition shadow-lg shadow-emerald-600/20">
-									💬 Contact Developer
+									href="/contact"
+									className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm transition">
+									Contact Developer
 								</a>
 							</div>
 						</div>
@@ -193,8 +183,8 @@ export default function SettingsPage() {
 				{/* Privacy Notice */}
 				<div className="mt-6 p-4 rounded-lg bg-white/5 border border-white/10">
 					<p className="text-xs text-white/50 text-center">
-						🔒 Your API key is stored locally in your browser and is never sent
-						to Vortix servers. It's only used for direct communication with Groq
+						Your API key is stored locally in your browser and is never sent to
+						Vortix servers. It's only used for direct communication with Groq
 						API.
 					</p>
 				</div>
