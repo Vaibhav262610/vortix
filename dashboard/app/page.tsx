@@ -444,89 +444,142 @@ export default function Home() {
 						</p>
 					</div>
 					<div className="flex items-center gap-2">
-						<div className="px-3 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-600/30">
-							<span className="text-xs text-emerald-400 font-medium">
-								{devices.length} {devices.length === 1 ? "Device" : "Devices"}
-							</span>
-						</div>
+						{devices.filter((d) => d.status === "online").length > 0 && (
+							<div className="px-3 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-600/30">
+								<span className="text-xs text-emerald-400 font-medium">
+									{devices.filter((d) => d.status === "online").length} Online
+								</span>
+							</div>
+						)}
+						{devices.filter((d) => d.status === "offline").length > 0 && (
+							<div className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+								<span className="text-xs text-white/50 font-medium">
+									{devices.filter((d) => d.status === "offline").length} Offline
+								</span>
+							</div>
+						)}
 					</div>
 				</header>
 
 				<div className="grid gap-6 lg:grid-cols-[280px_1fr]">
 					{/* Devices — glass panel */}
 					<div className="glass rounded-2xl p-5 sm:p-6 h-fit">
-						<div className="flex items-center justify-between mb-4">
-							<p className="text-xs font-medium uppercase tracking-widest text-white/45">
-								Your Devices
-							</p>
-							<div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
-						</div>
 						{devices.length === 0 ? (
-							<div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-6 text-center">
-								<p className="text-sm text-white/70 mb-4">
-									No devices connected yet
-								</p>
-								<p className="text-xs text-white/50 mb-4">
-									Install Vortix CLI and start an agent to see your devices here
-								</p>
-								<a
-									href="/setup"
-									className="inline-block px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-lg transition">
-									View Setup Guide
-								</a>
-							</div>
+							<>
+								<div className="flex items-center justify-between mb-4">
+									<p className="text-xs font-medium uppercase tracking-widest text-white/45">
+										Your Devices
+									</p>
+								</div>
+								<div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-6 text-center">
+									<p className="text-sm text-white/70 mb-4">
+										No devices connected yet
+									</p>
+									<p className="text-xs text-white/50 mb-4">
+										Install Vortix CLI and start an agent to see your devices
+										here
+									</p>
+									<a
+										href="/setup"
+										className="inline-block px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm rounded-lg transition">
+										View Setup Guide
+									</a>
+								</div>
+							</>
 						) : (
-							<ul className="space-y-2">
-								{devices.map((device, index) => (
-									<li key={index}>
-										<button
-											type="button"
-											onClick={() => handleDeviceClick(device)}
-											className={`flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-all ${
-												selectedDevice === device.deviceName &&
-												device.authenticated
-													? "glass-strong text-white shadow-lg shadow-emerald-600/10 border border-emerald-600/30"
-													: "text-white/80 hover:bg-white/[0.06] border border-transparent"
-											}`}>
-											{device.authenticated ? (
-												<span
-													className={`h-2 w-2 shrink-0 rounded-full ${
-														device.status === "online"
-															? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]"
-															: "bg-white/30"
-													}`}
-												/>
-											) : (
-												<svg
-													className="w-4 h-4 text-orange-400"
-													fill="none"
-													stroke="currentColor"
-													viewBox="0 0 24 24">
-													<path
-														strokeLinecap="round"
-														strokeLinejoin="round"
-														strokeWidth={2}
-														d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-													/>
-												</svg>
-											)}
-											<span className="min-w-0 truncate font-medium">
-												{device.deviceName}
+							<>
+								{/* Online Devices */}
+								{devices.filter((d) => d.status === "online").length > 0 && (
+									<div className="mb-6">
+										<div className="flex items-center justify-between mb-3">
+											<p className="text-xs font-medium uppercase tracking-widest text-white/45">
+												Online Devices
+											</p>
+											<div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+										</div>
+										<ul className="space-y-2">
+											{devices
+												.filter((d) => d.status === "online")
+												.map((device, index) => (
+													<li key={index}>
+														<button
+															type="button"
+															onClick={() => handleDeviceClick(device)}
+															className={`flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-all ${
+																selectedDevice === device.deviceName &&
+																device.authenticated
+																	? "glass-strong text-white shadow-lg shadow-emerald-600/10 border border-emerald-600/30"
+																	: "text-white/80 hover:bg-white/[0.06] border border-transparent"
+															}`}>
+															{device.authenticated ? (
+																<span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
+															) : (
+																<svg
+																	className="w-4 h-4 text-orange-400"
+																	fill="none"
+																	stroke="currentColor"
+																	viewBox="0 0 24 24">
+																	<path
+																		strokeLinecap="round"
+																		strokeLinejoin="round"
+																		strokeWidth={2}
+																		d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+																	/>
+																</svg>
+															)}
+															<span className="min-w-0 truncate font-medium">
+																{device.deviceName}
+															</span>
+															<span
+																className={`ml-auto shrink-0 text-[11px] uppercase tracking-wider ${
+																	device.authenticated
+																		? "text-emerald-400/90"
+																		: "text-orange-400/90"
+																}`}>
+																{device.authenticated ? "online" : "locked"}
+															</span>
+														</button>
+													</li>
+												))}
+										</ul>
+									</div>
+								)}
+
+								{/* Recent Devices (Offline) */}
+								{devices.filter((d) => d.status === "offline").length > 0 && (
+									<div>
+										<div className="flex items-center justify-between mb-3">
+											<p className="text-xs font-medium uppercase tracking-widest text-white/45">
+												Recent Devices
+											</p>
+											<span className="text-[10px] text-white/30">
+												{devices.filter((d) => d.status === "offline").length}{" "}
+												offline
 											</span>
-											<span
-												className={`ml-auto shrink-0 text-[11px] uppercase tracking-wider ${
-													device.authenticated
-														? device.status === "online"
-															? "text-emerald-400/90"
-															: "text-white/40"
-														: "text-orange-400/90"
-												}`}>
-												{device.authenticated ? device.status : "locked"}
-											</span>
-										</button>
-									</li>
-								))}
-							</ul>
+										</div>
+										<ul className="space-y-2">
+											{devices
+												.filter((d) => d.status === "offline")
+												.map((device, index) => (
+													<li key={index}>
+														<button
+															type="button"
+															onClick={() => handleDeviceClick(device)}
+															className="flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-all text-white/50 hover:bg-white/[0.04] border border-transparent opacity-60">
+															<span className="h-2 w-2 shrink-0 rounded-full bg-white/20" />
+															<span className="min-w-0 truncate font-medium">
+																{device.deviceName}
+															</span>
+															<span className="ml-auto shrink-0 text-[11px] uppercase tracking-wider text-white/30">
+																offline
+															</span>
+														</button>
+													</li>
+												))}
+										</ul>
+									</div>
+								)}
+							</>
 						)}
 					</div>
 
