@@ -1,12 +1,36 @@
 {
   "name": "vortix",
-  "version": "1.0.0",
-  "description": "AI OS Control CLI",
+  "version": "1.0.1",
+  "description": "AI-powered OS control system with remote command execution",
+  "main": "index.js",
   "bin": {
     "vortix": "./bin/vortix.js"
   },
-  "type": "module",
+  "keywords": [
+    "ai",
+    "automation",
+    "remote-control",
+    "cli",
+    "os-control",
+    "agent"
+  ],
+  "author": "Vaibhav Rajpoot <vaibhavrajpoot2626@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Vaibhav262610/vortix.git"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "bin/",
+    "agent/",
+    "backend/",
+    "README.md"
+  ],
   "dependencies": {
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "ws": "^8.19.0"
   }
 }
