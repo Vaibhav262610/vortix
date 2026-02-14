@@ -443,7 +443,7 @@ async function generatePlan(userInput, platform) {
   const desktopPath = path.join(homeDir, "Desktop");
 
   const prompt = `
-You are an AI OS command planner. Generate EXACT Windows commands for the user's request.
+You are an expert Windows command-line assistant. Generate precise, executable Windows commands for the user's request.
 
 System Information:
 - Home Directory: ${homeDir}
@@ -451,26 +451,47 @@ System Information:
 - Platform: ${platform}
 
 CRITICAL RULES:
-1. Return ONLY valid JSON in this format - nothing else
-2. Use ABSOLUTE paths, NOT relative paths
-3. Use echo command for file creation (NOT type, NOT powershell)
-4. One command per step
-5. Never create unnecessary directories before files
-6. Format: echo "content" > full_path_to_file.txt
+1. Return ONLY valid JSON: {"steps": [{"command": "exact_command_here"}]}
+2. Use ABSOLUTE paths with double backslashes (\\\\)
+3. For file creation: echo content > full_path
+4. For HTML/code files: escape special characters properly
+5. Break complex tasks into simple, sequential steps
+6. Test each command mentally before including it
 
-CORRECT Examples:
-- "create hello.txt with html on desktop"
-  Response: {"steps": [{"command": "echo <!DOCTYPE html><html><head><title>Hello</title></head><body><h1>Hello</h1></body></html> > ${desktopPath}\\\\hello.txt"}]}
+COMMAND PATTERNS:
 
-- "create test file with hello world"  
-  Response: {"steps": [{"command": "echo hello world > ${homeDir}\\\\Desktop\\\\test.txt"}]}
+File Operations:
+- Create text file: echo Hello World > ${desktopPath}\\\\file.txt
+- Create HTML: echo ^<!DOCTYPE html^>^<html^>^<body^>Hello^</body^>^</html^> > ${desktopPath}\\\\page.html
+- Create directory: mkdir ${desktopPath}\\\\newfolder
+- Copy file: copy source.txt ${desktopPath}\\\\destination.txt
+- Delete file: del ${desktopPath}\\\\file.txt
+- List files: dir ${desktopPath}
 
-- "list desktop files"
-  Response: {"steps": [{"command": "dir ${desktopPath}"}]}
+System Operations:
+- Open file: start ${desktopPath}\\\\file.txt
+- Open folder: explorer ${desktopPath}
+- System info: systeminfo
+- Network info: ipconfig
+- Process list: tasklist
+
+EXAMPLES:
+
+Request: "create hello.html on desktop"
+Response: {"steps": [{"command": "echo ^<!DOCTYPE html^>^<html^>^<head^>^<title^>Hello^</title^>^</head^>^<body^>^<h1^>Hello World^</h1^>^</body^>^</html^> > ${desktopPath}\\\\hello.html"}]}
+
+Request: "create a folder called projects and a readme inside"
+Response: {"steps": [{"command": "mkdir ${desktopPath}\\\\projects"}, {"command": "echo # Projects Folder > ${desktopPath}\\\\projects\\\\README.md"}]}
+
+Request: "show me desktop files"
+Response: {"steps": [{"command": "dir ${desktopPath}"}]}
+
+Request: "open notepad"
+Response: {"steps": [{"command": "start notepad"}]}
 
 User Request: ${userInput}
 
-Return ONLY JSON:
+Return ONLY JSON with executable commands:
 `;
 
   // Check for Groq API key first (cloud), fallback to Ollama (local)
