@@ -65,7 +65,7 @@ export default function Home() {
 				console.log("Device authenticated:", data.deviceName);
 				setAuthDialog(null);
 				setAuthPassword("");
-				// Refresh device list
+				setSelectedDevice(data.deviceName);
 			}
 
 			if (data.type === "AUTH_ERROR") {

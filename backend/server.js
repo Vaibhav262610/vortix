@@ -252,7 +252,17 @@ wss.on("connection", (ws, req) => {
   }
 
   // Token format: device-hostname:password
-  const [deviceToken, password] = token.split(':');
+  const tokenParts = token.split(':');
+
+  if (tokenParts.length < 2) {
+    console.log("Invalid token format - missing password");
+    ws.close();
+    return;
+  }
+
+  // First part is device token, rest is password (in case password contains ':')
+  const deviceToken = tokenParts[0];
+  const password = tokenParts.slice(1).join(':');
 
   if (!deviceToken || !password) {
     console.log("Invalid token format");
