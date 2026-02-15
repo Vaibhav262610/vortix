@@ -26,6 +26,7 @@ export default function Home() {
 	const [approvalDialog, setApprovalDialog] = useState<ApprovalDialog>(null);
 	const [authDialog, setAuthDialog] = useState<AuthDialog>(null);
 	const [authPassword, setAuthPassword] = useState("");
+	const [showQuickCommands, setShowQuickCommands] = useState(false);
 
 	const [devices, setDevices] = useState<Device[]>([]);
 	const [logs, setLogs] = useState<string[]>([]);
@@ -35,6 +36,175 @@ export default function Home() {
 	const wsRef = useRef<WebSocket | null>(null);
 	const logsRef = useRef<HTMLDivElement | null>(null);
 	const [autoScroll, setAutoScroll] = useState(true);
+
+	// Quick Commands
+	const quickCommands = [
+		{
+			category: "System",
+			commands: [
+				{
+					name: "Shutdown",
+					icon: "⚡",
+					command: "shutdown /s /t 0",
+					description: "Shutdown PC immediately",
+				},
+				{
+					name: "Restart",
+					icon: "🔄",
+					command: "shutdown /r /t 0",
+					description: "Restart PC immediately",
+				},
+				{
+					name: "Sleep",
+					icon: "😴",
+					command: "rundll32.exe powrprof.dll,SetSuspendState 0,1,0",
+					description: "Put PC to sleep",
+				},
+				{
+					name: "Lock",
+					icon: "🔒",
+					command: "rundll32.exe user32.dll,LockWorkStation",
+					description: "Lock workstation",
+				},
+			],
+		},
+		{
+			category: "Applications",
+			commands: [
+				{
+					name: "Notepad",
+					icon: "📝",
+					command: "start notepad",
+					description: "Open Notepad",
+				},
+				{
+					name: "Calculator",
+					icon: "🔢",
+					command: "start calc",
+					description: "Open Calculator",
+				},
+				{
+					name: "Task Manager",
+					icon: "📊",
+					command: "start taskmgr",
+					description: "Open Task Manager",
+				},
+				{
+					name: "Command Prompt",
+					icon: "⌨️",
+					command: "start cmd",
+					description: "Open CMD",
+				},
+				{
+					name: "Paint",
+					icon: "🎨",
+					command: "start mspaint",
+					description: "Open Paint",
+				},
+				{
+					name: "File Explorer",
+					icon: "📁",
+					command: "start explorer",
+					description: "Open File Explorer",
+				},
+			],
+		},
+		{
+			category: "System Info",
+			commands: [
+				{
+					name: "System Info",
+					icon: "💻",
+					command: "systeminfo",
+					description: "Display system information",
+				},
+				{
+					name: "IP Config",
+					icon: "🌐",
+					command: "ipconfig",
+					description: "Display network configuration",
+				},
+				{
+					name: "Task List",
+					icon: "📋",
+					command: "tasklist",
+					description: "List running processes",
+				},
+				{
+					name: "Disk Info",
+					icon: "💾",
+					command: "wmic logicaldisk get name,size,freespace",
+					description: "Show disk space",
+				},
+			],
+		},
+		{
+			category: "Network",
+			commands: [
+				{
+					name: "Ping Google",
+					icon: "📡",
+					command: "ping google.com -n 4",
+					description: "Test internet connection",
+				},
+				{
+					name: "Network Stats",
+					icon: "📈",
+					command: "netstat -an",
+					description: "Show network statistics",
+				},
+				{
+					name: "DNS Flush",
+					icon: "🔄",
+					command: "ipconfig /flushdns",
+					description: "Clear DNS cache",
+				},
+			],
+		},
+		{
+			category: "Files",
+			commands: [
+				{
+					name: "List Desktop",
+					icon: "🖥️",
+					command: "dir %USERPROFILE%\\Desktop",
+					description: "List desktop files",
+				},
+				{
+					name: "List Downloads",
+					icon: "⬇️",
+					command: "dir %USERPROFILE%\\Downloads",
+					description: "List downloads",
+				},
+				{
+					name: "List Documents",
+					icon: "📄",
+					command: "dir %USERPROFILE%\\Documents",
+					description: "List documents",
+				},
+			],
+		},
+	];
+
+	const executeQuickCommand = (cmd: string) => {
+		if (!selectedDevice) {
+			alert("Please select a device first");
+			return;
+		}
+
+		setCommand(cmd);
+		setIsExecuting(true);
+
+		wsRef.current?.send(
+			JSON.stringify({
+				type: "FORCE_EXECUTE",
+				deviceName: selectedDevice,
+				command: cmd,
+			}),
+		);
+
+		setTimeout(() => setIsExecuting(false), 1000);
+	};
 
 	useEffect(() => {
 		console.log("Connecting to backend WebSocket...");
@@ -628,6 +798,113 @@ export default function Home() {
 								<p className="mt-3 text-xs text-orange-400/70">
 									Please select a device first
 								</p>
+							)}
+						</div>
+
+						{/* Quick Commands - Collapsible */}
+						<div className="glass rounded-2xl overflow-hidden">
+							<button
+								onClick={() => setShowQuickCommands(!showQuickCommands)}
+								className="w-full flex items-center justify-between px-5 sm:px-6 py-4 hover:bg-white/[0.02] transition">
+								<div className="flex items-center gap-3">
+									<div className="h-8 w-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+										<svg
+											className="w-4 h-4 text-purple-400"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24">
+											<path
+												strokeLinecap="round"
+												strokeLinejoin="round"
+												strokeWidth={2}
+												d="M13 10V3L4 14h7v7l9-11h-7z"
+											/>
+										</svg>
+									</div>
+									<div className="text-left">
+										<p className="text-sm font-medium text-white">
+											Quick Commands
+										</p>
+										<p className="text-xs text-white/50">
+											Pre-built commands for common tasks
+										</p>
+									</div>
+								</div>
+								<svg
+									className={`w-5 h-5 text-white/50 transition-transform ${
+										showQuickCommands ? "rotate-180" : ""
+									}`}
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24">
+									<path
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										strokeWidth={2}
+										d="M19 9l-7 7-7-7"
+									/>
+								</svg>
+							</button>
+
+							{showQuickCommands && (
+								<div className="border-t border-white/[0.06] p-5 sm:p-6">
+									<div className="space-y-6">
+										{quickCommands.map((category, idx) => (
+											<div key={idx}>
+												<h4 className="text-xs font-medium uppercase tracking-widest text-white/45 mb-3">
+													{category.category}
+												</h4>
+												<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+													{category.commands.map((cmd, cmdIdx) => (
+														<button
+															key={cmdIdx}
+															onClick={() => executeQuickCommand(cmd.command)}
+															disabled={!selectedDevice || isExecuting}
+															className={`group relative flex items-start gap-3 p-3 rounded-lg border transition text-left ${
+																!selectedDevice || isExecuting
+																	? "border-white/5 bg-white/[0.02] cursor-not-allowed opacity-50"
+																	: "border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/20 cursor-pointer"
+															}`}
+															title={cmd.description}>
+															<span className="text-xl flex-shrink-0">
+																{cmd.icon}
+															</span>
+															<div className="flex-1 min-w-0">
+																<p className="text-sm font-medium text-white/90 truncate">
+																	{cmd.name}
+																</p>
+																<p className="text-xs text-white/40 truncate">
+																	{cmd.description}
+																</p>
+															</div>
+															{!selectedDevice || isExecuting ? null : (
+																<svg
+																	className="w-4 h-4 text-white/30 group-hover:text-emerald-400 transition flex-shrink-0"
+																	fill="none"
+																	stroke="currentColor"
+																	viewBox="0 0 24 24">
+																	<path
+																		strokeLinecap="round"
+																		strokeLinejoin="round"
+																		strokeWidth={2}
+																		d="M14 5l7 7m0 0l-7 7m7-7H3"
+																	/>
+																</svg>
+															)}
+														</button>
+													))}
+												</div>
+											</div>
+										))}
+									</div>
+									{!selectedDevice && (
+										<div className="mt-4 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+											<p className="text-xs text-orange-300/80">
+												Select a device to use quick commands
+											</p>
+										</div>
+									)}
+								</div>
 							)}
 						</div>
 
