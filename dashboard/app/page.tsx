@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { quickCommands } from "../quickCommands";
 
 type Device = {
 	deviceName: string;
@@ -36,155 +37,6 @@ export default function Home() {
 	const wsRef = useRef<WebSocket | null>(null);
 	const logsRef = useRef<HTMLDivElement | null>(null);
 	const [autoScroll, setAutoScroll] = useState(true);
-
-	// Quick Commands
-	const quickCommands = [
-		{
-			category: "System",
-			commands: [
-				{
-					name: "Shutdown",
-					icon: "⚡",
-					command: "shutdown /s /t 0",
-					description: "Shutdown PC immediately",
-				},
-				{
-					name: "Restart",
-					icon: "🔄",
-					command: "shutdown /r /t 0",
-					description: "Restart PC immediately",
-				},
-				{
-					name: "Sleep",
-					icon: "😴",
-					command: "rundll32.exe powrprof.dll,SetSuspendState 0,1,0",
-					description: "Put PC to sleep",
-				},
-				{
-					name: "Lock",
-					icon: "🔒",
-					command: "rundll32.exe user32.dll,LockWorkStation",
-					description: "Lock workstation",
-				},
-			],
-		},
-		{
-			category: "Applications",
-			commands: [
-				{
-					name: "Notepad",
-					icon: "📝",
-					command: "start notepad",
-					description: "Open Notepad",
-				},
-				{
-					name: "Calculator",
-					icon: "🔢",
-					command: "start calc",
-					description: "Open Calculator",
-				},
-				{
-					name: "Task Manager",
-					icon: "📊",
-					command: "start taskmgr",
-					description: "Open Task Manager",
-				},
-				{
-					name: "Command Prompt",
-					icon: "⌨️",
-					command: "start cmd",
-					description: "Open CMD",
-				},
-				{
-					name: "Paint",
-					icon: "🎨",
-					command: "start mspaint",
-					description: "Open Paint",
-				},
-				{
-					name: "File Explorer",
-					icon: "📁",
-					command: "start explorer",
-					description: "Open File Explorer",
-				},
-			],
-		},
-		{
-			category: "System Info",
-			commands: [
-				{
-					name: "System Info",
-					icon: "💻",
-					command: "systeminfo",
-					description: "Display system information",
-				},
-				{
-					name: "IP Config",
-					icon: "🌐",
-					command: "ipconfig",
-					description: "Display network configuration",
-				},
-				{
-					name: "Task List",
-					icon: "📋",
-					command: "tasklist",
-					description: "List running processes",
-				},
-				{
-					name: "Disk Info",
-					icon: "💾",
-					command: "wmic logicaldisk get name,size,freespace",
-					description: "Show disk space",
-				},
-			],
-		},
-		{
-			category: "Network",
-			commands: [
-				{
-					name: "Ping Google",
-					icon: "📡",
-					command: "ping google.com -n 4",
-					description: "Test internet connection",
-				},
-				{
-					name: "Network Stats",
-					icon: "📈",
-					command: "netstat -an",
-					description: "Show network statistics",
-				},
-				{
-					name: "DNS Flush",
-					icon: "🔄",
-					command: "ipconfig /flushdns",
-					description: "Clear DNS cache",
-				},
-			],
-		},
-		{
-			category: "Files",
-			commands: [
-				{
-					name: "List Desktop",
-					icon: "🖥️",
-					command: "dir %USERPROFILE%\\Desktop",
-					description: "List desktop files",
-				},
-				{
-					name: "List Downloads",
-					icon: "⬇️",
-					command: "dir %USERPROFILE%\\Downloads",
-					description: "List downloads",
-				},
-				{
-					name: "List Documents",
-					icon: "📄",
-					command: "dir %USERPROFILE%\\Documents",
-					description: "List documents",
-				},
-			],
-		},
-	];
 
 	const executeQuickCommand = (cmd: string) => {
 		if (!selectedDevice) {
@@ -455,6 +307,124 @@ export default function Home() {
 								Unlock
 							</button>
 						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Quick Commands Modal */}
+			{showQuickCommands && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+					<div className="glass rounded-2xl border border-white/10 w-full max-w-6xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+						{/* Header */}
+						<div className="flex items-center justify-between px-6 py-4 border-b border-white/10 flex-shrink-0">
+							<div className="flex items-center gap-3">
+								<div className="h-10 w-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+									<svg
+										className="w-5 h-5 text-purple-400"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24">
+										<path
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											strokeWidth={2}
+											d="M13 10V3L4 14h7v7l9-11h-7z"
+										/>
+									</svg>
+								</div>
+								<div>
+									<h3 className="text-lg font-semibold text-white">
+										Quick Commands
+									</h3>
+									<p className="text-xs text-white/50">
+										90+ pre-built commands for common tasks
+									</p>
+								</div>
+							</div>
+							<button
+								onClick={() => setShowQuickCommands(false)}
+								className="h-8 w-8 rounded-lg hover:bg-white/10 flex items-center justify-center transition text-white/60 hover:text-white">
+								<svg
+									className="w-5 h-5"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24">
+									<path
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										strokeWidth={2}
+										d="M6 18L18 6M6 6l12 12"
+									/>
+								</svg>
+							</button>
+						</div>
+
+						{/* Content */}
+						<div className="flex-1 overflow-y-auto p-6">
+							<div className="space-y-8">
+								{quickCommands.map((category, idx) => (
+									<div key={idx}>
+										<h4 className="text-sm font-semibold uppercase tracking-widest text-purple-400/90 mb-4 flex items-center gap-2">
+											<span className="h-px flex-1 bg-gradient-to-r from-purple-500/50 to-transparent"></span>
+											{category.category}
+											<span className="h-px flex-1 bg-gradient-to-l from-purple-500/50 to-transparent"></span>
+										</h4>
+										<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+											{category.commands.map((cmd, cmdIdx) => (
+												<button
+													key={cmdIdx}
+													onClick={() => {
+														executeQuickCommand(cmd.command);
+														setShowQuickCommands(false);
+													}}
+													disabled={!selectedDevice || isExecuting}
+													className={`group relative flex items-start gap-3 p-4 rounded-xl border transition text-left ${
+														!selectedDevice || isExecuting
+															? "border-white/5 bg-white/[0.02] cursor-not-allowed opacity-50"
+															: "border-white/10 bg-white/[0.03] hover:bg-white/[0.08] hover:border-purple-500/30 cursor-pointer hover:shadow-lg hover:shadow-purple-500/10"
+													}`}
+													title={cmd.description}>
+													<span className="text-2xl flex-shrink-0">
+														{cmd.icon}
+													</span>
+													<div className="flex-1 min-w-0">
+														<p className="text-sm font-medium text-white/90 mb-1">
+															{cmd.name}
+														</p>
+														<p className="text-xs text-white/40 line-clamp-2">
+															{cmd.description}
+														</p>
+													</div>
+													{!selectedDevice || isExecuting ? null : (
+														<svg
+															className="w-4 h-4 text-white/20 group-hover:text-purple-400 transition flex-shrink-0 absolute top-3 right-3"
+															fill="none"
+															stroke="currentColor"
+															viewBox="0 0 24 24">
+															<path
+																strokeLinecap="round"
+																strokeLinejoin="round"
+																strokeWidth={2}
+																d="M14 5l7 7m0 0l-7 7m7-7H3"
+															/>
+														</svg>
+													)}
+												</button>
+											))}
+										</div>
+									</div>
+								))}
+							</div>
+						</div>
+
+						{/* Footer */}
+						{!selectedDevice && (
+							<div className="px-6 py-4 border-t border-white/10 bg-orange-500/5 flex-shrink-0">
+								<p className="text-sm text-orange-300/80 text-center">
+									⚠️ Select a device first to use quick commands
+								</p>
+							</div>
+						)}
 					</div>
 				</div>
 			)}
@@ -761,22 +731,48 @@ export default function Home() {
 								<p className="text-xs font-medium uppercase tracking-widest text-white/45">
 									Send Command
 								</p>
-								{selectedDevice && (
-									<div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-emerald-600/10 border border-emerald-600/30">
-										<div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-										<span className="text-xs text-emerald-400 font-medium">
-											{selectedDevice}
-										</span>
-									</div>
-								)}
+								<div className="flex items-center gap-2">
+									{selectedDevice && (
+										<div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-emerald-600/10 border border-emerald-600/30">
+											<div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+											<span className="text-xs text-emerald-400 font-medium">
+												{selectedDevice}
+											</span>
+										</div>
+									)}
+									<button
+										onClick={() => setShowQuickCommands(true)}
+										className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 transition text-purple-300 text-xs font-medium">
+										<svg
+											className="w-3.5 h-3.5"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24">
+											<path
+												strokeLinecap="round"
+												strokeLinejoin="round"
+												strokeWidth={2}
+												d="M13 10V3L4 14h7v7l9-11h-7z"
+											/>
+										</svg>
+										Quick Commands
+									</button>
+								</div>
 							</div>
 							<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
 								<input
 									value={command}
 									onChange={(e) => setCommand(e.target.value)}
 									onKeyDown={(e) => e.key === "Enter" && sendCommand()}
-									placeholder="Type a command or describe what you want to do..."
-									className="glass-input flex-1 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 border border-white/10"
+									placeholder={
+										selectedDevice
+											? "Type a command or describe what you want to do..."
+											: "Select a device first..."
+									}
+									disabled={!selectedDevice}
+									className={`glass-input flex-1 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 border border-white/10 ${
+										!selectedDevice ? "opacity-50 cursor-not-allowed" : ""
+									}`}
 								/>
 								<button
 									type="button"
@@ -785,7 +781,9 @@ export default function Home() {
 									className={`rounded-xl px-6 py-3 text-sm font-medium transition focus:outline-none focus:ring-2 sm:shrink-0 ${
 										isExecuting || isPlanning
 											? "cursor-not-allowed bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-											: "bg-emerald-600 hover:bg-emerald-700 text-white"
+											: !selectedDevice
+												? "cursor-not-allowed bg-white/5 text-white/40 border border-white/10"
+												: "bg-emerald-600 hover:bg-emerald-700 text-white"
 									}`}>
 									{isExecuting
 										? "Executing..."
@@ -801,116 +799,9 @@ export default function Home() {
 							)}
 						</div>
 
-						{/* Quick Commands - Collapsible */}
-						<div className="glass rounded-2xl overflow-hidden">
-							<button
-								onClick={() => setShowQuickCommands(!showQuickCommands)}
-								className="w-full flex items-center justify-between px-5 sm:px-6 py-4 hover:bg-white/[0.02] transition">
-								<div className="flex items-center gap-3">
-									<div className="h-8 w-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
-										<svg
-											className="w-4 h-4 text-purple-400"
-											fill="none"
-											stroke="currentColor"
-											viewBox="0 0 24 24">
-											<path
-												strokeLinecap="round"
-												strokeLinejoin="round"
-												strokeWidth={2}
-												d="M13 10V3L4 14h7v7l9-11h-7z"
-											/>
-										</svg>
-									</div>
-									<div className="text-left">
-										<p className="text-sm font-medium text-white">
-											Quick Commands
-										</p>
-										<p className="text-xs text-white/50">
-											Pre-built commands for common tasks
-										</p>
-									</div>
-								</div>
-								<svg
-									className={`w-5 h-5 text-white/50 transition-transform ${
-										showQuickCommands ? "rotate-180" : ""
-									}`}
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24">
-									<path
-										strokeLinecap="round"
-										strokeLinejoin="round"
-										strokeWidth={2}
-										d="M19 9l-7 7-7-7"
-									/>
-								</svg>
-							</button>
-
-							{showQuickCommands && (
-								<div className="border-t border-white/[0.06] p-5 sm:p-6">
-									<div className="space-y-6">
-										{quickCommands.map((category, idx) => (
-											<div key={idx}>
-												<h4 className="text-xs font-medium uppercase tracking-widest text-white/45 mb-3">
-													{category.category}
-												</h4>
-												<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-													{category.commands.map((cmd, cmdIdx) => (
-														<button
-															key={cmdIdx}
-															onClick={() => executeQuickCommand(cmd.command)}
-															disabled={!selectedDevice || isExecuting}
-															className={`group relative flex items-start gap-3 p-3 rounded-lg border transition text-left ${
-																!selectedDevice || isExecuting
-																	? "border-white/5 bg-white/[0.02] cursor-not-allowed opacity-50"
-																	: "border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/20 cursor-pointer"
-															}`}
-															title={cmd.description}>
-															<span className="text-xl flex-shrink-0">
-																{cmd.icon}
-															</span>
-															<div className="flex-1 min-w-0">
-																<p className="text-sm font-medium text-white/90 truncate">
-																	{cmd.name}
-																</p>
-																<p className="text-xs text-white/40 truncate">
-																	{cmd.description}
-																</p>
-															</div>
-															{!selectedDevice || isExecuting ? null : (
-																<svg
-																	className="w-4 h-4 text-white/30 group-hover:text-emerald-400 transition flex-shrink-0"
-																	fill="none"
-																	stroke="currentColor"
-																	viewBox="0 0 24 24">
-																	<path
-																		strokeLinecap="round"
-																		strokeLinejoin="round"
-																		strokeWidth={2}
-																		d="M14 5l7 7m0 0l-7 7m7-7H3"
-																	/>
-																</svg>
-															)}
-														</button>
-													))}
-												</div>
-											</div>
-										))}
-									</div>
-									{!selectedDevice && (
-										<div className="mt-4 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
-											<p className="text-xs text-orange-300/80">
-												Select a device to use quick commands
-											</p>
-										</div>
-									)}
-								</div>
-							)}
-						</div>
-
 						{/* Logs — glass window */}
-						<div className="glass rounded-2xl overflow-hidden flex flex-col">
-							<div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2.5">
+						<div className="glass rounded-2xl overflow-hidden flex flex-col h-[500px]">
+							<div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2.5 flex-shrink-0">
 								<div className="flex gap-1.5">
 									<span className="h-2 w-2 rounded-full bg-white/20" />
 									<span className="h-2 w-2 rounded-full bg-white/20" />
@@ -927,6 +818,11 @@ export default function Home() {
 										}`}>
 										{autoScroll ? "Auto-scroll: ON" : "Auto-scroll: OFF"}
 									</button>
+									<button
+										onClick={() => setLogs([])}
+										className="text-xs px-2 py-1 rounded-md border border-white/10 text-white/60 hover:text-white hover:bg-white/5 transition">
+										Clear
+									</button>
 								</div>
 							</div>
 							<div
@@ -938,7 +834,7 @@ export default function Home() {
 										el.scrollHeight - el.scrollTop - el.clientHeight < 40;
 									if (atBottom !== autoScroll) setAutoScroll(atBottom);
 								}}
-								className="h-80 overflow-y-auto p-3 font-mono text-[13px] leading-relaxed text-white/75">
+								className="flex-1 overflow-y-auto p-3 font-mono text-[13px] leading-relaxed text-white/75">
 								{logs.length === 0 ? (
 									<p className="text-white/35">No entries yet.</p>
 								) : (
