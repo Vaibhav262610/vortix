@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 const command = process.argv[2];
 
@@ -9,21 +11,70 @@ const packageRoot = path.join(__dirname, '..');
 const agentPath = path.join(packageRoot, 'agent', 'agent.js');
 const backendPath = path.join(packageRoot, 'backend', 'server.js');
 
+// Check if this is first run
+const configPath = path.join(os.homedir(), '.vortix-config.json');
+const firstRunFlagPath = path.join(os.homedir(), '.vortix-first-run');
+
+function showWelcome() {
+    const colors = {
+        reset: '\x1b[0m',
+        bright: '\x1b[1m',
+        green: '\x1b[32m',
+        cyan: '\x1b[36m',
+        yellow: '\x1b[33m',
+        magenta: '\x1b[35m',
+    };
+
+    console.log('\n');
+    console.log(colors.bright + colors.green + '  ╦  ╦┌─┐┬─┐┌┬┐┬─┐ ┬' + colors.reset);
+    console.log(colors.bright + colors.green + '  ╚╗╔╝│ │├┬┘ │ │┌┴┬┘' + colors.reset);
+    console.log(colors.bright + colors.green + '   ╚╝ └─┘┴└─ ┴ ┴┴ └─' + colors.reset);
+    console.log('\n');
+    console.log(colors.bright + colors.cyan + '  🚀 Welcome to Vortix!' + colors.reset);
+    console.log(colors.yellow + '  AI-Powered Remote OS Control' + colors.reset);
+    console.log('\n');
+    console.log(colors.bright + '  📖 Quick Start:' + colors.reset);
+    console.log('');
+    console.log('     ' + colors.cyan + '1.' + colors.reset + ' Set device password:');
+    console.log('        ' + colors.green + 'vortix login' + colors.reset);
+    console.log('');
+    console.log('     ' + colors.cyan + '2.' + colors.reset + ' Start the agent:');
+    console.log('        ' + colors.green + 'vortix start' + colors.reset);
+    console.log('');
+    console.log('     ' + colors.cyan + '3.' + colors.reset + ' Open dashboard:');
+    console.log('        ' + colors.magenta + colors.bright + 'https://vortixai.vercel.app' + colors.reset);
+    console.log('');
+    console.log(colors.yellow + '  ⚡ Pro Tip: ' + colors.reset + 'Use AI commands in the dashboard for natural language control!');
+    console.log('');
+}
+
 function showHelp() {
-    console.log(`
-Vortix - AI OS Control CLI
+    showWelcome();
+    console.log('  📚 Available Commands:\n');
+    console.log('     vortix login              Set device password');
+    console.log('     vortix start              Start the agent');
+    console.log('     vortix backend            Start backend server (dev only)');
+    console.log('     vortix help               Show this help message');
+    console.log('');
+    console.log('  📖 Documentation:');
+    console.log('     https://github.com/Vaibhav262610/vortix');
+    console.log('');
+}
 
-Usage:
-  vortix login              Login and authenticate device
-  vortix start              Start the agent
-  vortix backend            Start the backend server
-  vortix help               Show this help message
-
-Examples:
-  vortix login              # Authenticate your device
-  vortix start              # Start agent on this machine
-  vortix backend            # Start backend server
-  `);
+// Show welcome message on first run or if no command provided
+if (!command || command === 'help' || command === '--help' || command === '-h') {
+    if (!fs.existsSync(firstRunFlagPath) && !command) {
+        // First run without command
+        showWelcome();
+        fs.writeFileSync(firstRunFlagPath, Date.now().toString());
+        process.exit(0);
+    } else if (command === 'help' || command === '--help' || command === '-h') {
+        showHelp();
+        process.exit(0);
+    } else if (!command) {
+        showHelp();
+        process.exit(0);
+    }
 }
 
 function runAgent(cmd) {
@@ -68,12 +119,6 @@ switch (command) {
 
     case 'backend':
         runBackend();
-        break;
-
-    case 'help':
-    case '--help':
-    case '-h':
-        showHelp();
         break;
 
     default:

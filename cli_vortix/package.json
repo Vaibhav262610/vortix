@@ -1,10 +1,13 @@
 {
   "name": "vortix",
-  "version": "1.0.2",
+  "version": "1.0.5",
   "description": "AI-powered OS control system with remote command execution",
   "main": "index.js",
   "bin": {
     "vortix": "./bin/vortix.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
   },
   "keywords": [
     "ai",
@@ -27,6 +30,7 @@
     "bin/",
     "agent/",
     "backend/",
+    "scripts/",
     "README.md"
   ],
   "dependencies": {

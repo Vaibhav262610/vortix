@@ -43,7 +43,7 @@ vortix start
 
 ### 4. Open Dashboard
 
-Visit: [https://vortixredeploy.vercel.app](https://vortixredeploy.vercel.app)
+Visit: [https://vortixai.vercel.app](https://vortixai.vercel.app)
 
 ---
 
@@ -101,7 +101,7 @@ vortix/
 
 ## 🌐 Live Deployments
 
-- **Dashboard**: https://vortixredeploy.vercel.app
+- **Dashboard**: https://vortixai.vercel.app
 - **Backend**: https://vortix.onrender.com
 - **npm Package**: https://www.npmjs.com/package/vortix
 
