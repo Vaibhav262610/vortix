@@ -9,8 +9,9 @@ const crypto = require("crypto");
 const PORT = process.env.PORT || 8080;
 
 const dashboardClients = new Set();
-const devices = new Map(); // deviceId -> { deviceName, password, status, ws, lastSeen }
+const devices = new Map(); // deviceId -> { deviceName, password, status, ws, lastSeen, platform }
 const pendingResults = new Map();
+const screenShareSessions = new Map(); // deviceName -> Set of dashboard websockets
 
 // Helper to hash passwords
 function hashPassword(password) {
@@ -232,10 +233,157 @@ wss.on("connection", (ws, req) => {
           }));
         }
       }
+
+      // Screen sharing
+      if (data.type === "START_SCREEN_SHARE") {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          ws.send(JSON.stringify({
+            type: "ERROR",
+            message: "Not authenticated for this device"
+          }));
+          return;
+        }
+
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== "online") {
+          ws.send(JSON.stringify({
+            type: "ERROR",
+            message: "Device not found or offline"
+          }));
+          return;
+        }
+
+        // Add this dashboard to screen share sessions
+        if (!screenShareSessions.has(data.deviceName)) {
+          screenShareSessions.set(data.deviceName, new Set());
+        }
+        screenShareSessions.get(data.deviceName).add(ws);
+
+        // Request screen share from agent
+        targetDevice.ws.send(JSON.stringify({
+          type: "START_SCREEN_CAPTURE"
+        }));
+      }
+
+      if (data.type === "STOP_SCREEN_SHARE") {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+        const targetDevice = devices.get(deviceId);
+
+        // Remove this dashboard from screen share sessions
+        if (screenShareSessions.has(data.deviceName)) {
+          screenShareSessions.get(data.deviceName).delete(ws);
+
+          // If no more dashboards watching, stop capture on agent
+          if (screenShareSessions.get(data.deviceName).size === 0) {
+            screenShareSessions.delete(data.deviceName);
+            if (targetDevice && targetDevice.ws) {
+              targetDevice.ws.send(JSON.stringify({
+                type: "STOP_SCREEN_CAPTURE"
+              }));
+            }
+          }
+        }
+      }
+
+      // Auto-start control
+      if (data.type === "ENABLE_AUTOSTART") {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          ws.send(JSON.stringify({
+            type: "ERROR",
+            message: "Not authenticated for this device"
+          }));
+          return;
+        }
+
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== "online") {
+          ws.send(JSON.stringify({
+            type: "ERROR",
+            message: "Device not found or offline"
+          }));
+          return;
+        }
+
+        targetDevice.ws.send(JSON.stringify({
+          type: "ENABLE_AUTOSTART"
+        }));
+      }
+
+      if (data.type === "DISABLE_AUTOSTART") {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          ws.send(JSON.stringify({
+            type: "ERROR",
+            message: "Not authenticated for this device"
+          }));
+          return;
+        }
+
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== "online") {
+          ws.send(JSON.stringify({
+            type: "ERROR",
+            message: "Device not found or offline"
+          }));
+          return;
+        }
+
+        targetDevice.ws.send(JSON.stringify({
+          type: "DISABLE_AUTOSTART"
+        }));
+      }
+
+      if (data.type === "GET_AUTOSTART_STATUS") {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          ws.send(JSON.stringify({
+            type: "ERROR",
+            message: "Not authenticated for this device"
+          }));
+          return;
+        }
+
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== "online") {
+          ws.send(JSON.stringify({
+            type: "ERROR",
+            message: "Device not found or offline"
+          }));
+          return;
+        }
+
+        targetDevice.ws.send(JSON.stringify({
+          type: "GET_AUTOSTART_STATUS"
+        }));
+      }
     });
 
     ws.on("close", () => {
       dashboardClients.delete(ws);
+
+      // Clean up screen share sessions
+      screenShareSessions.forEach((sessions, deviceName) => {
+        if (sessions.has(ws)) {
+          sessions.delete(ws);
+          if (sessions.size === 0) {
+            screenShareSessions.delete(deviceName);
+            const deviceId = `device-${deviceName.toLowerCase()}`;
+            const device = devices.get(deviceId);
+            if (device && device.ws) {
+              device.ws.send(JSON.stringify({
+                type: "STOP_SCREEN_CAPTURE"
+              }));
+            }
+          }
+        }
+      });
+
       console.log("Dashboard disconnected");
     });
 
@@ -281,7 +429,8 @@ wss.on("connection", (ws, req) => {
       passwordHash: hashPassword(password),
       status: "offline",
       ws: null,
-      lastSeen: null
+      lastSeen: null,
+      platform: "unknown" // Will be updated when agent connects
     });
   } else {
     // Verify password
@@ -306,6 +455,10 @@ wss.on("connection", (ws, req) => {
 
     if (data.type === "HEARTBEAT") {
       device.lastSeen = Date.now();
+      // Update platform info if provided
+      if (data.platform) {
+        device.platform = data.platform;
+      }
     }
 
     if (data.type === "LOG") {
@@ -316,6 +469,36 @@ wss.on("connection", (ws, req) => {
             type: "LOG",
             deviceName: device.deviceName,
             message: data.message,
+          }));
+        }
+      });
+    }
+
+    if (data.type === "SCREEN_FRAME") {
+      // Broadcast screen frame to all dashboards watching this device
+      if (screenShareSessions.has(device.deviceName)) {
+        screenShareSessions.get(device.deviceName).forEach((dashboardWs) => {
+          if (dashboardWs.readyState === WebSocket.OPEN) {
+            dashboardWs.send(JSON.stringify({
+              type: "SCREEN_FRAME",
+              deviceName: device.deviceName,
+              frame: data.frame
+            }));
+          }
+        });
+      }
+    }
+
+    if (data.type === "AUTOSTART_STATUS" || data.type === "AUTOSTART_ERROR") {
+      // Forward auto-start status to authenticated dashboards
+      dashboardClients.forEach((dashboardWs) => {
+        const deviceId = `device-${device.deviceName.toLowerCase()}`;
+        if (dashboardWs.authenticatedDevices.has(deviceId)) {
+          dashboardWs.send(JSON.stringify({
+            type: data.type,
+            deviceName: device.deviceName,
+            enabled: data.enabled,
+            message: data.message
           }));
         }
       });
@@ -411,23 +594,16 @@ async function generatePlan(userInput, platform, userApiKey = null) {
   const homeDir = os.homedir();
   const desktopPath = path.join(homeDir, "Desktop");
 
-  const prompt = `
-You are an expert Windows command-line assistant. Generate precise, executable Windows commands for the user's request.
+  // Platform-specific command patterns
+  const isWindows = platform === 'win32';
+  const isMac = platform === 'darwin';
+  const isLinux = platform === 'linux';
 
-System Information:
-- Home Directory: ${homeDir}
-- Desktop Path: ${desktopPath}
-- Platform: ${platform}
+  let platformInstructions = '';
 
-CRITICAL RULES:
-1. Return ONLY valid JSON: {"steps": [{"command": "exact_command_here"}]}
-2. Use ABSOLUTE paths with double backslashes (\\\\)
-3. For file creation: echo content > full_path
-4. For HTML/code files: escape special characters properly
-5. Break complex tasks into simple, sequential steps
-6. Test each command mentally before including it
-
-COMMAND PATTERNS:
+  if (isWindows) {
+    platformInstructions = `
+WINDOWS COMMAND PATTERNS:
 
 File Operations:
 - Create text file: echo Hello World > ${desktopPath}\\\\file.txt
@@ -443,25 +619,69 @@ System Operations:
 - System info: systeminfo
 - Network info: ipconfig
 - Process list: tasklist
+- Lock PC: rundll32.exe user32.dll,LockWorkStation
+- Shutdown: shutdown /s /t 0
+- Restart: shutdown /r /t 0
 
 EXAMPLES:
-
 Request: "create hello.html on desktop"
 Response: {"steps": [{"command": "echo ^<!DOCTYPE html^>^<html^>^<head^>^<title^>Hello^</title^>^</head^>^<body^>^<h1^>Hello World^</h1^>^</body^>^</html^> > ${desktopPath}\\\\hello.html"}]}
+`;
+  } else if (isMac || isLinux) {
+    platformInstructions = `
+${isMac ? 'macOS' : 'LINUX'} COMMAND PATTERNS:
 
-Request: "create a folder called projects and a readme inside"
-Response: {"steps": [{"command": "mkdir ${desktopPath}\\\\projects"}, {"command": "echo # Projects Folder > ${desktopPath}\\\\projects\\\\README.md"}]}
+File Operations:
+- Create text file: echo "Hello World" > ${desktopPath}/file.txt
+- Create HTML: echo '<!DOCTYPE html><html><body>Hello</body></html>' > ${desktopPath}/page.html
+- Create directory: mkdir -p ${desktopPath}/newfolder
+- Copy file: cp source.txt ${desktopPath}/destination.txt
+- Delete file: rm ${desktopPath}/file.txt
+- List files: ls -la ${desktopPath}
 
-Request: "show me desktop files"
-Response: {"steps": [{"command": "dir ${desktopPath}"}]}
+System Operations:
+- Open file: ${isMac ? 'open' : 'xdg-open'} ${desktopPath}/file.txt
+- Open folder: ${isMac ? 'open' : 'xdg-open'} ${desktopPath}
+- System info: ${isMac ? 'system_profiler SPSoftwareDataType' : 'uname -a'}
+- Network info: ifconfig
+- Process list: ps aux
+${isMac ? '- Lock screen: pmset displaysleepnow' : '- Lock screen: gnome-screensaver-command -l'}
+${isMac ? '- Shutdown: sudo shutdown -h now' : '- Shutdown: sudo shutdown -h now'}
+${isMac ? '- Restart: sudo shutdown -r now' : '- Restart: sudo reboot'}
 
-Request: "open notepad"
-Response: {"steps": [{"command": "start notepad"}]}
+EXAMPLES:
+Request: "create hello.html on desktop"
+Response: {"steps": [{"command": "echo '<!DOCTYPE html><html><head><title>Hello</title></head><body><h1>Hello World</h1></body></html>' > ${desktopPath}/hello.html"}]}
+`;
+  }
+
+  const prompt = `
+You are an expert ${isWindows ? 'Windows' : isMac ? 'macOS' : 'Linux'} command-line assistant. Generate precise, executable ${isWindows ? 'Windows' : isMac ? 'macOS' : 'Linux'} commands for the user's request.
+
+System Information:
+- Home Directory: ${homeDir}
+- Desktop Path: ${desktopPath}
+- Platform: ${platform} (${isWindows ? 'Windows' : isMac ? 'macOS' : 'Linux'})
+
+CRITICAL RULES:
+1. Return ONLY valid JSON: {"steps": [{"command": "exact_command_here"}]}
+2. Use ABSOLUTE paths appropriate for ${isWindows ? 'Windows (backslashes)' : 'Unix (forward slashes)'}
+3. For file creation: use appropriate echo syntax for the platform
+4. Break complex tasks into simple, sequential steps
+5. Test each command mentally before including it
+
+${platformInstructions}
 
 User Request: ${userInput}
 
 Return ONLY JSON with executable commands:
 `;
+  Response: { "steps": [{ "command": "start notepad" }] }
+
+User Request: ${ userInput }
+
+Return ONLY JSON with executable commands:
+  `;
 
   // Priority: user-provided API key > server environment variable > Ollama fallback
   const GROQ_API_KEY = userApiKey || process.env.GROQ_API_KEY;
@@ -485,7 +705,7 @@ Return ONLY JSON with executable commands:
         },
         {
           headers: {
-            "Authorization": `Bearer ${GROQ_API_KEY}`,
+            "Authorization": `Bearer ${ GROQ_API_KEY } `,
             "Content-Type": "application/json"
           },
           timeout: 30000
@@ -519,7 +739,7 @@ Return ONLY JSON with executable commands:
 
     try {
       const response = await axios.post(
-        `${ollamaUrl}/api/generate`,
+        `${ ollamaUrl } /api/generate`,
         {
           model: "qwen2.5:7b",
           prompt: prompt,
@@ -556,7 +776,7 @@ function broadcastDevicesToDashboard(dashboardWs) {
 
   devices.forEach((device, deviceId) => {
     const isAuthenticated = dashboardWs.authenticatedDevices.has(deviceId);
-    console.log(`Device ${deviceId}: authenticated=${isAuthenticated}`);
+    console.log(`Device ${ deviceId }: authenticated = ${ isAuthenticated } `);
 
     deviceList.push({
       deviceName: device.deviceName,

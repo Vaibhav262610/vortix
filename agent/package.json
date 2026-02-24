@@ -12,6 +12,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "ws": "^8.19.0"
+    "ws": "^8.19.0",
+    "screenshot-desktop": "^1.15.0"
   }
 }

@@ -463,6 +463,11 @@ export default function Home() {
 	const [logs, setLogs] = useState<string[]>([]);
 	const [selectedDevice, setSelectedDevice] = useState<string>("");
 	const [command, setCommand] = useState("");
+	const [screenStream, setScreenStream] = useState<string>("");
+	const [showScreenShare, setShowScreenShare] = useState(false);
+	const [autoStartEnabled, setAutoStartEnabled] = useState<
+		Record<string, boolean>
+	>({});
 
 	const wsRef = useRef<WebSocket | null>(null);
 	const logsRef = useRef<HTMLDivElement | null>(null);
@@ -487,6 +492,49 @@ export default function Home() {
 
 		setTimeout(() => setIsExecuting(false), 1000);
 	};
+
+	// Keyboard shortcuts
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			// Ctrl+Enter to send command
+			if (e.ctrlKey && e.key === "Enter") {
+				e.preventDefault();
+				if (selectedDevice && command && !isExecuting && !isPlanning) {
+					sendCommand();
+				}
+			}
+			// Ctrl+K to open quick commands
+			if (e.ctrlKey && e.key === "k") {
+				e.preventDefault();
+				setShowQuickCommands(true);
+			}
+			// ESC to close modals
+			if (e.key === "Escape") {
+				if (showScreenShare) {
+					setShowScreenShare(false);
+					wsRef.current?.send(
+						JSON.stringify({
+							type: "STOP_SCREEN_SHARE",
+							deviceName: selectedDevice,
+						}),
+					);
+				}
+				if (showQuickCommands) {
+					setShowQuickCommands(false);
+				}
+			}
+		};
+
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [
+		selectedDevice,
+		command,
+		isExecuting,
+		isPlanning,
+		showScreenShare,
+		showQuickCommands,
+	]);
 
 	useEffect(() => {
 		console.log("Connecting to backend WebSocket...");
@@ -566,6 +614,30 @@ export default function Home() {
 
 			if (data.type === "LOG") {
 				setLogs((prev) => [...prev, `[${data.deviceName}] ${data.message}`]);
+			}
+
+			if (data.type === "SCREEN_FRAME") {
+				setScreenStream(data.frame);
+			}
+
+			if (data.type === "AUTOSTART_STATUS") {
+				console.log("Auto-start status:", data.deviceName, data.enabled);
+				setAutoStartEnabled((prev) => ({
+					...prev,
+					[data.deviceName]: data.enabled,
+				}));
+				if (data.message) {
+					setLogs((prev) => [...prev, `[${data.deviceName}] ${data.message}`]);
+				}
+			}
+
+			if (data.type === "AUTOSTART_ERROR") {
+				console.error("Auto-start error:", data.message);
+				setLogs((prev) => [
+					...prev,
+					`[${data.deviceName}] ERROR: ${data.message}`,
+				]);
+				alert(`Auto-start error: ${data.message}`);
 			}
 			// console.log("finish time:",isExecuting)
 		};
@@ -649,6 +721,14 @@ export default function Home() {
 				device.deviceName,
 			);
 			setSelectedDevice(device.deviceName);
+
+			// Request auto-start status
+			wsRef.current?.send(
+				JSON.stringify({
+					type: "GET_AUTOSTART_STATUS",
+					deviceName: device.deviceName,
+				}),
+			);
 		}
 	};
 
@@ -986,6 +1066,101 @@ export default function Home() {
 								className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-emerald-500/50">
 								Approve & Execute
 							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Screen Share Modal */}
+			{showScreenShare && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+					<div className="glass rounded-2xl border border-white/10 w-full max-w-6xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+						{/* Header */}
+						<div className="flex items-center justify-between px-6 py-4 border-b border-white/10 flex-shrink-0">
+							<div className="flex items-center gap-3">
+								<div className="h-10 w-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+									<svg
+										className="w-5 h-5 text-blue-400"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24">
+										<path
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											strokeWidth={2}
+											d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+										/>
+									</svg>
+								</div>
+								<div>
+									<h3 className="text-lg font-semibold text-white">
+										Screen Share - {selectedDevice}
+									</h3>
+									<p className="text-xs text-white/50 flex items-center gap-2">
+										<span className="h-2 w-2 rounded-full bg-red-500 animate-pulse"></span>
+										Live streaming
+									</p>
+								</div>
+							</div>
+							<button
+								onClick={() => {
+									setShowScreenShare(false);
+									wsRef.current?.send(
+										JSON.stringify({
+											type: "STOP_SCREEN_SHARE",
+											deviceName: selectedDevice,
+										}),
+									);
+								}}
+								className="h-8 w-8 rounded-lg hover:bg-white/10 flex items-center justify-center transition text-white/60 hover:text-white">
+								<svg
+									className="w-5 h-5"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24">
+									<path
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										strokeWidth={2}
+										d="M6 18L18 6M6 6l12 12"
+									/>
+								</svg>
+							</button>
+						</div>
+
+						{/* Screen Content */}
+						<div className="flex-1 overflow-hidden p-6 bg-black/40">
+							{screenStream ? (
+								<img
+									src={`data:image/jpeg;base64,${screenStream}`}
+									alt="Desktop Screen"
+									className="w-full h-full object-contain rounded-lg"
+								/>
+							) : (
+								<div className="flex items-center justify-center h-full">
+									<div className="text-center">
+										<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+										<p className="text-white/70">
+											Waiting for screen stream...
+										</p>
+										<p className="text-white/50 text-sm mt-2">
+											Make sure the agent is running on the device
+										</p>
+									</div>
+								</div>
+							)}
+						</div>
+
+						{/* Footer */}
+						<div className="px-6 py-4 border-t border-white/10 bg-black/20 flex-shrink-0 flex items-center justify-between">
+							<div className="text-xs text-white/50">Press ESC to close</div>
+							<div className="flex items-center gap-2">
+								<div className="px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/30">
+									<span className="text-xs text-blue-400 font-medium">
+										Real-time
+									</span>
+								</div>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -1360,6 +1535,158 @@ export default function Home() {
 								</svg>
 							</button>
 						</div>
+
+						{/* Screen Share Button */}
+						<div className="mt-2">
+							<button
+								onClick={() => {
+									if (!selectedDevice) {
+										alert("Please select a device first");
+										return;
+									}
+									setShowScreenShare(!showScreenShare);
+									if (!showScreenShare) {
+										// Request screen sharing
+										wsRef.current?.send(
+											JSON.stringify({
+												type: "START_SCREEN_SHARE",
+												deviceName: selectedDevice,
+											}),
+										);
+									} else {
+										// Stop screen sharing
+										wsRef.current?.send(
+											JSON.stringify({
+												type: "STOP_SCREEN_SHARE",
+												deviceName: selectedDevice,
+											}),
+										);
+									}
+								}}
+								disabled={!selectedDevice}
+								className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition group ${
+									!selectedDevice
+										? "border-white/5 bg-white/[0.02] cursor-not-allowed opacity-50"
+										: showScreenShare
+											? "bg-gradient-to-r from-red-500/10 to-red-600/10 border-red-500/30 hover:from-red-500/20 hover:to-red-600/20"
+											: "bg-gradient-to-r from-blue-500/10 to-blue-600/10 border-blue-500/30 hover:from-blue-500/20 hover:to-blue-600/20"
+								}`}>
+								<div
+									className={`h-8 w-8 rounded-lg flex items-center justify-center group-hover:bg-opacity-30 transition ${
+										showScreenShare ? "bg-red-500/20" : "bg-blue-500/20"
+									}`}>
+									<svg
+										className={`w-4 h-4 ${showScreenShare ? "text-red-400" : "text-blue-400"}`}
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24">
+										<path
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											strokeWidth={2}
+											d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+										/>
+									</svg>
+								</div>
+								<div className="flex-1 text-left">
+									<p
+										className={`text-sm font-medium transition ${
+											showScreenShare
+												? "text-red-300 group-hover:text-red-200"
+												: "text-blue-300 group-hover:text-blue-200"
+										}`}>
+										{showScreenShare ? "Stop Screen Share" : "View Screen"}
+									</p>
+									<p
+										className={`text-xs ${showScreenShare ? "text-red-400/60" : "text-blue-400/60"}`}>
+										{showScreenShare
+											? "Live streaming"
+											: "Real-time desktop view"}
+									</p>
+								</div>
+								<svg
+									className={`w-4 h-4 transition ${
+										showScreenShare
+											? "text-red-400/60 group-hover:text-red-400"
+											: "text-blue-400/60 group-hover:text-blue-400"
+									}`}
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24">
+									<path
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										strokeWidth={2}
+										d="M9 5l7 7-7 7"
+									/>
+								</svg>
+							</button>
+						</div>
+
+						{/* Auto-Start Toggle */}
+						<div className="mt-2">
+							<div
+								className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition ${
+									!selectedDevice
+										? "border-white/5 bg-white/[0.02] opacity-50"
+										: "border-white/10 bg-white/[0.03]"
+								}`}>
+								<div className="h-8 w-8 rounded-lg bg-green-500/20 flex items-center justify-center">
+									<svg
+										className="w-4 h-4 text-green-400"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24">
+										<path
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											strokeWidth={2}
+											d="M13 10V3L4 14h7v7l9-11h-7z"
+										/>
+									</svg>
+								</div>
+								<div className="flex-1 text-left">
+									<p className="text-sm font-medium text-white/90">
+										Auto-Start on Boot
+									</p>
+									<p className="text-xs text-white/50">
+										{autoStartEnabled[selectedDevice] ? "Enabled" : "Disabled"}
+									</p>
+								</div>
+								<button
+									onClick={() => {
+										if (!selectedDevice) {
+											alert("Please select a device first");
+											return;
+										}
+										const isEnabled = autoStartEnabled[selectedDevice];
+										wsRef.current?.send(
+											JSON.stringify({
+												type: isEnabled
+													? "DISABLE_AUTOSTART"
+													: "ENABLE_AUTOSTART",
+												deviceName: selectedDevice,
+											}),
+										);
+									}}
+									disabled={!selectedDevice}
+									className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500/50 ${
+										!selectedDevice
+											? "bg-white/10 cursor-not-allowed"
+											: autoStartEnabled[selectedDevice]
+												? "bg-green-600"
+												: "bg-white/20"
+									}`}>
+									<span
+										className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+											autoStartEnabled[selectedDevice]
+												? "translate-x-6"
+												: "translate-x-1"
+										}`}
+									/>
+								</button>
+							</div>
+						</div>
 					</div>
 
 					{/* Main: command + logs */}
@@ -1434,6 +1761,19 @@ export default function Home() {
 							{!selectedDevice && (
 								<p className="mt-3 text-xs text-orange-400/70">
 									Please select a device first
+								</p>
+							)}
+							{selectedDevice && (
+								<p className="mt-3 text-xs text-white/40">
+									💡 Tip: Press{" "}
+									<kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 font-mono text-xs">
+										Ctrl+Enter
+									</kbd>{" "}
+									to send,{" "}
+									<kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 font-mono text-xs">
+										Ctrl+K
+									</kbd>{" "}
+									for quick commands
 								</p>
 							)}
 						</div>

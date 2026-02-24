@@ -66,6 +66,19 @@ export default function SetupPage() {
 				<div className="glass rounded-2xl border border-white/10 p-8 mb-8">
 					<h3 className="text-2xl font-bold text-white mb-6">Quick Setup</h3>
 
+					{/* Platform Tabs */}
+					<div className="flex gap-2 mb-6 border-b border-white/10">
+						<button className="px-4 py-2 text-sm font-medium text-white border-b-2 border-emerald-600">
+							Windows
+						</button>
+						<button className="px-4 py-2 text-sm font-medium text-white/50 hover:text-white border-b-2 border-transparent">
+							macOS
+						</button>
+						<button className="px-4 py-2 text-sm font-medium text-white/50 hover:text-white border-b-2 border-transparent">
+							Linux
+						</button>
+					</div>
+
 					{/* Step 1 */}
 					<div className="mb-8">
 						<div className="flex items-center gap-3 mb-3">
@@ -89,9 +102,98 @@ export default function SetupPage() {
 									{copiedCommand === "install" ? "✓ Copied" : "Copy"}
 								</button>
 							</div>
-							<p className="text-white/50 text-sm">
+							<p className="text-white/50 text-sm mb-3">
 								Install the Vortix CLI globally on your computer
 							</p>
+
+							{/* Platform-specific notes */}
+							<div className="space-y-2 text-xs">
+								<details className="bg-black/20 rounded-lg border border-white/10">
+									<summary className="px-3 py-2 cursor-pointer text-white/70 hover:text-white">
+										📦 Don't have Node.js/npm?
+									</summary>
+									<div className="px-3 pb-3 pt-1 space-y-2 text-white/60">
+										<p className="font-semibold text-white/80">Windows:</p>
+										<p>
+											Download from{" "}
+											<a
+												href="https://nodejs.org"
+												target="_blank"
+												className="text-emerald-400 hover:underline">
+												nodejs.org
+											</a>{" "}
+											or use{" "}
+											<code className="px-1 bg-black/40 rounded">
+												winget install OpenJS.NodeJS
+											</code>
+										</p>
+
+										<p className="font-semibold text-white/80 mt-2">macOS:</p>
+										<p>
+											<code className="px-1 bg-black/40 rounded">
+												brew install node
+											</code>{" "}
+											(requires{" "}
+											<a
+												href="https://brew.sh"
+												target="_blank"
+												className="text-emerald-400 hover:underline">
+												Homebrew
+											</a>
+											)
+										</p>
+
+										<p className="font-semibold text-white/80 mt-2">Linux:</p>
+										<p>
+											Ubuntu/Debian:{" "}
+											<code className="px-1 bg-black/40 rounded">
+												sudo apt install nodejs npm
+											</code>
+										</p>
+										<p>
+											Fedora:{" "}
+											<code className="px-1 bg-black/40 rounded">
+												sudo dnf install nodejs npm
+											</code>
+										</p>
+										<p>
+											Arch:{" "}
+											<code className="px-1 bg-black/40 rounded">
+												sudo pacman -S nodejs npm
+											</code>
+										</p>
+									</div>
+								</details>
+
+								<details className="bg-black/20 rounded-lg border border-white/10">
+									<summary className="px-3 py-2 cursor-pointer text-white/70 hover:text-white">
+										🖥️ Platform-specific requirements
+									</summary>
+									<div className="px-3 pb-3 pt-1 space-y-2 text-white/60">
+										<p className="font-semibold text-white/80">Windows:</p>
+										<p>✅ No additional requirements</p>
+
+										<p className="font-semibold text-white/80 mt-2">macOS:</p>
+										<p>
+											For screen sharing: Grant Screen Recording permission in
+											System Preferences → Security & Privacy → Privacy → Screen
+											Recording
+										</p>
+
+										<p className="font-semibold text-white/80 mt-2">Linux:</p>
+										<p>
+											For screen sharing:{" "}
+											<code className="px-1 bg-black/40 rounded">
+												sudo apt-get install scrot
+											</code>{" "}
+											or{" "}
+											<code className="px-1 bg-black/40 rounded">
+												sudo apt-get install imagemagick
+											</code>
+										</p>
+									</div>
+								</details>
+							</div>
 						</div>
 					</div>
 
@@ -187,14 +289,79 @@ export default function SetupPage() {
 							<p className="text-white/50 text-sm mb-3">
 								Try these basic commands to verify everything is working:
 							</p>
-							<div className="space-y-2">
-								<div className="bg-black/40 rounded-lg p-3 border border-white/10">
-									<code className="text-emerald-400 font-mono text-sm">
-										open notepad
-									</code>
-									<p className="text-white/40 text-xs mt-1">
-										Opens Notepad application
-									</p>
+
+							{/* Windows Commands */}
+							<div className="mb-4">
+								<p className="text-white/70 text-xs font-semibold mb-2">
+									Windows:
+								</p>
+								<div className="space-y-2">
+									<div className="bg-black/40 rounded-lg p-3 border border-white/10">
+										<code className="text-emerald-400 font-mono text-sm">
+											dir C:\Users
+										</code>
+										<p className="text-white/40 text-xs mt-1">
+											List files in Users directory
+										</p>
+									</div>
+									<div className="bg-black/40 rounded-lg p-3 border border-white/10">
+										<code className="text-emerald-400 font-mono text-sm">
+											start notepad
+										</code>
+										<p className="text-white/40 text-xs mt-1">
+											Opens Notepad application
+										</p>
+									</div>
+								</div>
+							</div>
+
+							{/* macOS Commands */}
+							<div className="mb-4">
+								<p className="text-white/70 text-xs font-semibold mb-2">
+									macOS:
+								</p>
+								<div className="space-y-2">
+									<div className="bg-black/40 rounded-lg p-3 border border-white/10">
+										<code className="text-emerald-400 font-mono text-sm">
+											ls -la ~/Desktop
+										</code>
+										<p className="text-white/40 text-xs mt-1">
+											List files on Desktop
+										</p>
+									</div>
+									<div className="bg-black/40 rounded-lg p-3 border border-white/10">
+										<code className="text-emerald-400 font-mono text-sm">
+											open -a TextEdit
+										</code>
+										<p className="text-white/40 text-xs mt-1">
+											Opens TextEdit application
+										</p>
+									</div>
+								</div>
+							</div>
+
+							{/* Linux Commands */}
+							<div>
+								<p className="text-white/70 text-xs font-semibold mb-2">
+									Linux:
+								</p>
+								<div className="space-y-2">
+									<div className="bg-black/40 rounded-lg p-3 border border-white/10">
+										<code className="text-emerald-400 font-mono text-sm">
+											ls -la ~/Desktop
+										</code>
+										<p className="text-white/40 text-xs mt-1">
+											List files on Desktop
+										</p>
+									</div>
+									<div className="bg-black/40 rounded-lg p-3 border border-white/10">
+										<code className="text-emerald-400 font-mono text-sm">
+											xdg-open .
+										</code>
+										<p className="text-white/40 text-xs mt-1">
+											Opens file manager
+										</p>
+									</div>
 								</div>
 							</div>
 						</div>
