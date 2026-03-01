@@ -53,6 +53,9 @@ function showHelp() {
     console.log('  📚 Available Commands:\n');
     console.log('     vortix login              Set device password');
     console.log('     vortix start              Start the agent');
+    console.log('     vortix enable-autostart   Enable auto-start on system boot');
+    console.log('     vortix disable-autostart  Disable auto-start');
+    console.log('     vortix status             Check agent and auto-start status');
     console.log('     vortix backend            Start backend server (dev only)');
     console.log('     vortix help               Show this help message');
     console.log('');
@@ -115,6 +118,18 @@ switch (command) {
 
     case 'start':
         runAgent('start');
+        break;
+
+    case 'enable-autostart':
+        runAgent('enable-autostart');
+        break;
+
+    case 'disable-autostart':
+        runAgent('disable-autostart');
+        break;
+
+    case 'status':
+        runAgent('status');
         break;
 
     case 'backend':

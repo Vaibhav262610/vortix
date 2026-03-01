@@ -623,7 +623,33 @@ System Operations:
 - Shutdown: shutdown /s /t 0
 - Restart: shutdown /r /t 0
 
+Opening Applications (ALWAYS prefer installed apps over websites):
+- Open Notion app: start notion://
+- Open Spotify app: start spotify:
+- Open Discord app: start discord://
+- Open Slack app: start slack://
+- Open VS Code: code
+- Open Chrome: start chrome
+- Open Firefox: start firefox
+- Open Edge: start msedge
+- Open Notepad: start notepad
+- Open Calculator: start calc
+- Open Paint: start mspaint
+- Open File Explorer: start explorer
+- Generic app: start <appname>
+
+IMPORTANT: When user says "open [app name]", ALWAYS try to open the installed application first using "start <appname>" or "start <appname>://". Only open websites if explicitly asked for "website" or "browser".
+
 EXAMPLES:
+Request: "open notion"
+Response: {"steps": [{"command": "start notion://"}]}
+
+Request: "open notion website"
+Response: {"steps": [{"command": "start https://notion.so"}]}
+
+Request: "open spotify"
+Response: {"steps": [{"command": "start spotify:"}]}
+
 Request: "create hello.html on desktop"
 Response: {"steps": [{"command": "echo ^<!DOCTYPE html^>^<html^>^<head^>^<title^>Hello^</title^>^</head^>^<body^>^<h1^>Hello World^</h1^>^</body^>^</html^> > ${desktopPath}\\\\hello.html"}]}
 `;
@@ -649,7 +675,32 @@ ${isMac ? '- Lock screen: pmset displaysleepnow' : '- Lock screen: gnome-screens
 ${isMac ? '- Shutdown: sudo shutdown -h now' : '- Shutdown: sudo shutdown -h now'}
 ${isMac ? '- Restart: sudo shutdown -r now' : '- Restart: sudo reboot'}
 
+Opening Applications (ALWAYS prefer installed apps over websites):
+${isMac ? `- Open Notion app: open -a Notion
+- Open Spotify app: open -a Spotify
+- Open Discord app: open -a Discord
+- Open Slack app: open -a Slack
+- Open VS Code: open -a "Visual Studio Code"
+- Open Chrome: open -a "Google Chrome"
+- Open Safari: open -a Safari
+- Open Firefox: open -a Firefox
+- Generic app: open -a "<AppName>"` : `- Open app: <appname> (if in PATH)
+- Open with xdg: xdg-open <appname>
+- Open Notion: notion-app (if installed)
+- Open Spotify: spotify (if installed)
+- Open VS Code: code
+- Open Chrome: google-chrome
+- Open Firefox: firefox`}
+
+IMPORTANT: When user says "open [app name]", ALWAYS try to open the installed application first. Only open websites if explicitly asked for "website" or "browser".
+
 EXAMPLES:
+Request: "open notion"
+Response: {"steps": [{"command": "${isMac ? 'open -a Notion' : 'notion-app || xdg-open notion://'}"}]}
+
+Request: "open notion website"
+Response: {"steps": [{"command": "${isMac ? 'open' : 'xdg-open'} https://notion.so"}]}
+
 Request: "create hello.html on desktop"
 Response: {"steps": [{"command": "echo '<!DOCTYPE html><html><head><title>Hello</title></head><body><h1>Hello World</h1></body></html>' > ${desktopPath}/hello.html"}]}
 `;
@@ -669,6 +720,14 @@ CRITICAL RULES:
 3. For file creation: use appropriate echo syntax for the platform
 4. Break complex tasks into simple, sequential steps
 5. Test each command mentally before including it
+6. IMPORTANT: When user says "open [app name]", ALWAYS open the INSTALLED APPLICATION, NOT the website
+7. Only open websites if user explicitly says "website", "browser", or provides a URL
+
+APPLICATION OPENING PRIORITY:
+- "open notion" → Open Notion app (${isWindows ? 'start notion://' : isMac ? 'open -a Notion' : 'notion-app'})
+- "open notion website" → Open website (${isWindows ? 'start' : isMac ? 'open' : 'xdg-open'} https://notion.so)
+- "open spotify" → Open Spotify app (${isWindows ? 'start spotify:' : isMac ? 'open -a Spotify' : 'spotify'})
+- "open vscode" → Open VS Code (${isWindows ? 'code' : isMac ? 'open -a "Visual Studio Code"' : 'code'})
 
 ${platformInstructions}
 
@@ -676,12 +735,6 @@ User Request: ${userInput}
 
 Return ONLY JSON with executable commands:
 `;
-  Response: { "steps": [{ "command": "start notepad" }] }
-
-User Request: ${ userInput }
-
-Return ONLY JSON with executable commands:
-  `;
 
   // Priority: user-provided API key > server environment variable > Ollama fallback
   const GROQ_API_KEY = userApiKey || process.env.GROQ_API_KEY;
@@ -705,7 +758,7 @@ Return ONLY JSON with executable commands:
         },
         {
           headers: {
-            "Authorization": `Bearer ${ GROQ_API_KEY } `,
+            "Authorization": `Bearer ${GROQ_API_KEY} `,
             "Content-Type": "application/json"
           },
           timeout: 30000
@@ -739,7 +792,7 @@ Return ONLY JSON with executable commands:
 
     try {
       const response = await axios.post(
-        `${ ollamaUrl } /api/generate`,
+        `${ollamaUrl} /api/generate`,
         {
           model: "qwen2.5:7b",
           prompt: prompt,
@@ -776,7 +829,7 @@ function broadcastDevicesToDashboard(dashboardWs) {
 
   devices.forEach((device, deviceId) => {
     const isAuthenticated = dashboardWs.authenticatedDevices.has(deviceId);
-    console.log(`Device ${ deviceId }: authenticated = ${ isAuthenticated } `);
+    console.log(`Device ${deviceId}: authenticated = ${isAuthenticated} `);
 
     deviceList.push({
       deviceName: device.deviceName,
