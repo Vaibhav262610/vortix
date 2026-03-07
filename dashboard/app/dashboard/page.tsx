@@ -2,6 +2,12 @@
 
 import { useEffect, useState, useRef, JSX } from "react";
 import { quickCommands } from "../../quickCommands";
+import { SystemStatsWidget } from "../../components/SystemStatsWidget";
+import { RecentCommandsWidget } from "../../components/RecentCommandsWidget";
+import { DeviceStatusWidget } from "../../components/DeviceStatusWidget";
+import { FileTransfer } from "../../components/FileTransfer";
+import { MultiDeviceSelector } from "../../components/MultiDeviceSelector";
+import { useTheme } from "../../contexts/ThemeContext";
 
 type Device = {
 	deviceName: string;
@@ -451,6 +457,10 @@ const Icon = ({
 };
 
 export default function Home() {
+	const themeContext = useTheme();
+	const theme = themeContext?.theme || "dark";
+	const toggleTheme = themeContext?.toggleTheme || (() => {});
+
 	const [isPlanning, setIsPlanning] = useState(false);
 	const [isExecuting, setIsExecuting] = useState(false);
 	const [planPreview, setPlanPreview] = useState<any[]>([]);
@@ -458,6 +468,15 @@ export default function Home() {
 	const [authDialog, setAuthDialog] = useState<AuthDialog>(null);
 	const [authPassword, setAuthPassword] = useState("");
 	const [showQuickCommands, setShowQuickCommands] = useState(false);
+
+	// New feature states
+	const [showFileTransfer, setShowFileTransfer] = useState(false);
+	const [showMultiDevice, setShowMultiDevice] = useState(false);
+	const [commandHistory, setCommandHistory] = useState<string[]>([]);
+	const [fileListData, setFileListData] = useState<{
+		files: any[];
+		path: string;
+	} | null>(null);
 
 	const [devices, setDevices] = useState<Device[]>([]);
 	const [logs, setLogs] = useState<string[]>([]);
@@ -518,6 +537,15 @@ export default function Home() {
 							deviceName: selectedDevice,
 						}),
 					);
+				}
+				if (showQuickCommands) {
+					setShowQuickCommands(false);
+				}
+				if (showFileTransfer) {
+					setShowFileTransfer(false);
+				}
+				if (showMultiDevice) {
+					setShowMultiDevice(false);
 				}
 				if (showQuickCommands) {
 					setShowQuickCommands(false);
@@ -649,6 +677,46 @@ export default function Home() {
 						]);
 						alert(`Auto-start error: ${data.message}`);
 					}
+
+					// Handle file download data
+					if (data.type === "FILE_DATA") {
+						try {
+							const link = document.createElement("a");
+							link.href = `data:application/octet-stream;base64,${data.fileData}`;
+							link.download = data.fileName;
+							document.body.appendChild(link);
+							link.click();
+							document.body.removeChild(link);
+							setLogs((prev) => [
+								...prev,
+								`[${data.deviceName}] Downloaded: ${data.fileName}`,
+							]);
+						} catch (error) {
+							console.error("File download error:", error);
+							setLogs((prev) => [
+								...prev,
+								`[${data.deviceName}] ERROR: Failed to download file`,
+							]);
+						}
+					}
+
+					// Handle file list response
+					if (data.type === "FILE_LIST") {
+						console.log("File list received:", data.files);
+						setFileListData({
+							files: data.files || [],
+							path: data.path || "",
+						});
+						setLogs((prev) => [
+							...prev,
+							`[${data.deviceName}] Browsing: ${data.path || "Home"}`,
+						]);
+					}
+
+					// Handle system stats (already handled by SystemStatsWidget, just log)
+					if (data.type === "SYSTEM_STATS") {
+						console.log("System stats received:", data.deviceName, data.stats);
+					}
 				};
 
 				ws.onerror = (err) => {
@@ -707,6 +775,9 @@ export default function Home() {
 
 		setIsPlanning(true);
 		setIsExecuting(true);
+
+		// Track command history
+		setCommandHistory((prev) => [...prev, command]);
 
 		// Get user's API key from localStorage
 		const userApiKey = localStorage.getItem("groq_api_key");
@@ -784,10 +855,31 @@ export default function Home() {
 		);
 	};
 
+	const handleMultiDeviceExecute = (deviceNames: string[], cmd: string) => {
+		wsRef.current?.send(
+			JSON.stringify({
+				type: "MULTI_DEVICE_EXECUTE",
+				deviceNames,
+				command: cmd,
+			}),
+		);
+		setCommandHistory((prev) => [...prev, cmd]);
+	};
+
 	return (
-		<div className="min-h-screen bg-[#0d0d0f] text-white">
+		<div
+			className={`min-h-screen ${
+				theme === "dark"
+					? "bg-[#0d0d0f] text-white"
+					: "bg-gray-50 text-gray-900"
+			}`}>
 			{/* Header */}
-			<div className="border-b border-white/10 bg-black/20 backdrop-blur-sm sticky top-0 z-30">
+			<div
+				className={`border-b backdrop-blur-sm sticky top-0 z-30 ${
+					theme === "dark"
+						? "border-white/10 bg-black/20"
+						: "border-gray-200 bg-white/80"
+				}`}>
 				<div className="container mx-auto px-4 py-4 flex items-center justify-between">
 					<div className="flex items-center gap-4">
 						<a
@@ -800,6 +892,13 @@ export default function Home() {
 						</a>
 					</div>
 					<div className="flex items-center gap-3">
+						{/* Theme Toggle */}
+						<button
+							onClick={toggleTheme}
+							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition"
+							title="Toggle theme">
+							{theme === "dark" ? "🌙" : "☀️"}
+						</button>
 						<a
 							href="/setup"
 							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
@@ -1869,6 +1968,92 @@ export default function Home() {
 						</div>
 					</div>
 				</div>
+			</div>
+
+			{/* File Transfer Modal */}
+			{showFileTransfer && (
+				<FileTransfer
+					deviceName={selectedDevice}
+					ws={wsRef.current}
+					onClose={() => setShowFileTransfer(false)}
+					fileListData={fileListData}
+				/>
+			)}
+
+			{/* Multi-Device Selector Modal */}
+			{showMultiDevice && (
+				<MultiDeviceSelector
+					devices={devices}
+					onExecute={handleMultiDeviceExecute}
+					onClose={() => setShowMultiDevice(false)}
+				/>
+			)}
+
+			{/* Widgets Sidebar - Fixed Right */}
+			<div
+				className={`fixed right-0 top-20 bottom-0 w-80 backdrop-blur-xl border-l p-4 space-y-4 overflow-y-auto z-20 ${
+					theme === "dark"
+						? "bg-black/40 border-white/10"
+						: "bg-white/60 border-gray-200"
+				}`}>
+				<SystemStatsWidget deviceName={selectedDevice} ws={wsRef.current} />
+				<DeviceStatusWidget
+					devices={devices}
+					selectedDevice={selectedDevice}
+					onDeviceSelect={(deviceName) => {
+						const device = devices.find((d) => d.deviceName === deviceName);
+						if (device) handleDeviceClick(device);
+					}}
+				/>
+				<RecentCommandsWidget
+					commands={commandHistory}
+					onCommandClick={(cmd) => {
+						setCommand(cmd);
+					}}
+				/>
+			</div>
+
+			{/* Feature Buttons - Fixed Bottom Left */}
+			<div className="fixed bottom-6 left-6 flex gap-3 z-30">
+				<button
+					onClick={() => setShowMultiDevice(true)}
+					disabled={
+						devices.filter((d) => d.authenticated && d.status === "online")
+							.length < 2
+					}
+					className="px-4 py-3 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/50 text-purple-400 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg backdrop-blur-sm"
+					title="Execute command on multiple devices">
+					<svg
+						className="w-5 h-5"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24">
+						<path
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							strokeWidth={2}
+							d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+						/>
+					</svg>
+				</button>
+				<button
+					onClick={() => setShowFileTransfer(true)}
+					disabled={!selectedDevice}
+					className="px-4 py-3 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/50 text-blue-400 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg backdrop-blur-sm"
+					title="Transfer files">
+					<svg
+						className="w-5 h-5"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24">
+						<path
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							strokeWidth={2}
+							d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+						/>
+					</svg>
+				</button>
 			</div>
 		</div>
 	);

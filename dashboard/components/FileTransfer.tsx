@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 interface FileTransferProps {
 	deviceName: string;
 	ws: WebSocket | null;
 	onClose: () => void;
+	fileListData?: { files: any[]; path: string } | null;
 }
 
 interface FileItem {
@@ -15,12 +16,25 @@ interface FileItem {
 	path: string;
 }
 
-export function FileTransfer({ deviceName, ws, onClose }: FileTransferProps) {
+export function FileTransfer({
+	deviceName,
+	ws,
+	onClose,
+	fileListData,
+}: FileTransferProps) {
 	const [currentPath, setCurrentPath] = useState("");
 	const [files, setFiles] = useState<FileItem[]>([]);
 	const [uploading, setUploading] = useState(false);
 	const [uploadProgress, setUploadProgress] = useState(0);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	// Update files when fileListData changes
+	useEffect(() => {
+		if (fileListData) {
+			setFiles(fileListData.files);
+			setCurrentPath(fileListData.path);
+		}
+	}, [fileListData]);
 
 	const browseFiles = (path: string) => {
 		if (!ws || ws.readyState !== WebSocket.OPEN) return;
