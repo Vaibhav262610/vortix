@@ -18,11 +18,14 @@ export function Widget({
 	onRemove,
 }: WidgetProps) {
 	return (
-		<div
-			className={`glass rounded-2xl border border-white/10 dark:border-white/10 light:border-gray-200 p-4 ${className}`}>
+		<div className={`glass rounded-2xl p-4 ${className}`}>
 			<div className="flex items-center justify-between mb-4">
 				<div className="flex items-center gap-2">
-					{icon && <div className="text-emerald-400">{icon}</div>}
+					{icon && (
+						<div className="text-emerald-400 dark:text-emerald-400 light:text-emerald-600">
+							{icon}
+						</div>
+					)}
 					<h3 className="text-sm font-semibold text-white dark:text-white light:text-gray-900">
 						{title}
 					</h3>
@@ -30,7 +33,7 @@ export function Widget({
 				{onRemove && (
 					<button
 						onClick={onRemove}
-						className="h-6 w-6 rounded-lg hover:bg-white/10 flex items-center justify-center transition text-white/60 hover:text-white"
+						className="h-6 w-6 rounded-lg hover:bg-white/10 dark:hover:bg-white/10 light:hover:bg-gray-200 flex items-center justify-center transition text-white/60 dark:text-white/60 light:text-gray-600 hover:text-white dark:hover:text-white light:hover:text-gray-900"
 						title="Remove widget">
 						<svg
 							className="w-4 h-4"

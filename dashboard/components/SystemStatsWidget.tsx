@@ -62,10 +62,14 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 	}) => (
 		<div className="space-y-1">
 			<div className="flex items-center justify-between text-xs">
-				<span className="text-white/60">{label}</span>
-				<span className="text-white/90 font-medium">{value}%</span>
+				<span className="text-white/60 dark:text-white/60 light:text-gray-600">
+					{label}
+				</span>
+				<span className="text-white/90 dark:text-white/90 light:text-gray-900 font-medium">
+					{value}%
+				</span>
 			</div>
-			<div className="h-2 bg-white/5 rounded-full overflow-hidden">
+			<div className="h-2 bg-white/5 dark:bg-white/5 light:bg-gray-200 rounded-full overflow-hidden">
 				<div
 					className={`h-full ${color} transition-all duration-500`}
 					style={{ width: `${value}%` }}
@@ -97,7 +101,7 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 				<StatBar label="Disk" value={stats.disk} color="bg-emerald-500" />
 			</div>
 			{!deviceName && (
-				<p className="text-xs text-white/40 text-center mt-3">
+				<p className="text-xs text-white/40 dark:text-white/40 light:text-gray-500 text-center mt-3">
 					Select a device to view stats
 				</p>
 			)}

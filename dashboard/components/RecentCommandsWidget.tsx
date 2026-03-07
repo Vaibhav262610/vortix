@@ -32,7 +32,7 @@ export function RecentCommandsWidget({
 			}>
 			<div className="space-y-2">
 				{recentCommands.length === 0 ? (
-					<p className="text-xs text-white/40 text-center py-4">
+					<p className="text-xs text-white/40 dark:text-white/40 light:text-gray-500 text-center py-4">
 						No recent commands
 					</p>
 				) : (
@@ -40,8 +40,8 @@ export function RecentCommandsWidget({
 						<button
 							key={idx}
 							onClick={() => onCommandClick(cmd)}
-							className="w-full text-left px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition group">
-							<p className="text-xs font-mono text-white/80 group-hover:text-white truncate">
+							className="w-full text-left px-3 py-2 rounded-lg bg-white/5 dark:bg-white/5 light:bg-gray-100 hover:bg-white/10 dark:hover:bg-white/10 light:hover:bg-gray-200 border border-white/10 dark:border-white/10 light:border-gray-200 transition group">
+							<p className="text-xs font-mono text-white/80 dark:text-white/80 light:text-gray-700 group-hover:text-white dark:group-hover:text-white light:group-hover:text-gray-900 truncate">
 								{cmd}
 							</p>
 						</button>

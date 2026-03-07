@@ -44,26 +44,32 @@ export function DeviceStatusWidget({
 			}>
 			<div className="space-y-3">
 				<div className="flex items-center justify-between text-xs">
-					<span className="text-white/60">Online</span>
-					<span className="text-emerald-400 font-medium">
+					<span className="text-white/60 dark:text-white/60 light:text-gray-600">
+						Online
+					</span>
+					<span className="text-emerald-400 dark:text-emerald-400 light:text-emerald-600 font-medium">
 						{onlineDevices.length}
 					</span>
 				</div>
 				<div className="flex items-center justify-between text-xs">
-					<span className="text-white/60">Offline</span>
-					<span className="text-red-400 font-medium">
+					<span className="text-white/60 dark:text-white/60 light:text-gray-600">
+						Offline
+					</span>
+					<span className="text-red-400 dark:text-red-400 light:text-red-600 font-medium">
 						{offlineDevices.length}
 					</span>
 				</div>
 				<div className="flex items-center justify-between text-xs">
-					<span className="text-white/60">Locked</span>
-					<span className="text-orange-400 font-medium">
+					<span className="text-white/60 dark:text-white/60 light:text-gray-600">
+						Locked
+					</span>
+					<span className="text-orange-400 dark:text-orange-400 light:text-orange-600 font-medium">
 						{lockedDevices.length}
 					</span>
 				</div>
 
 				{onlineDevices.length > 0 && (
-					<div className="pt-3 border-t border-white/10 space-y-2">
+					<div className="pt-3 border-t border-white/10 dark:border-white/10 light:border-gray-200 space-y-2">
 						{onlineDevices.map((device) => (
 							<button
 								key={device.deviceName}
@@ -71,11 +77,11 @@ export function DeviceStatusWidget({
 								className={`w-full text-left px-3 py-2 rounded-lg border transition ${
 									selectedDevice === device.deviceName
 										? "bg-emerald-500/20 border-emerald-500/50"
-										: "bg-white/5 border-white/10 hover:bg-white/10"
+										: "bg-white/5 dark:bg-white/5 light:bg-gray-100 border-white/10 dark:border-white/10 light:border-gray-200 hover:bg-white/10 dark:hover:bg-white/10 light:hover:bg-gray-200"
 								}`}>
 								<div className="flex items-center gap-2">
 									<div className="h-2 w-2 rounded-full bg-emerald-400" />
-									<span className="text-xs font-medium text-white/90">
+									<span className="text-xs font-medium text-white/90 dark:text-white/90 light:text-gray-900">
 										{device.deviceName}
 									</span>
 								</div>
