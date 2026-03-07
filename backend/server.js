@@ -362,6 +362,107 @@ wss.on("connection", (ws, req) => {
           type: "GET_AUTOSTART_STATUS"
         }));
       }
+
+      // Multi-device execution
+      if (data.type === "MULTI_DEVICE_EXECUTE") {
+        const { deviceNames, command } = data;
+
+        deviceNames.forEach(deviceName => {
+          const deviceId = `device-${deviceName.toLowerCase()}`;
+
+          if (!ws.authenticatedDevices.has(deviceId)) {
+            return;
+          }
+
+          const targetDevice = devices.get(deviceId);
+          if (!targetDevice || targetDevice.status !== "online") {
+            return;
+          }
+
+          // Send command to each device
+          targetDevice.ws.send(JSON.stringify({
+            type: "EXECUTE",
+            command
+          }));
+        });
+      }
+
+      // System stats request
+      if (data.type === "GET_SYSTEM_STATS") {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          return;
+        }
+
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== "online") {
+          return;
+        }
+
+        targetDevice.ws.send(JSON.stringify({
+          type: "GET_SYSTEM_STATS"
+        }));
+      }
+
+      // File transfer - Browse files
+      if (data.type === "BROWSE_FILES") {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          return;
+        }
+
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== "online") {
+          return;
+        }
+
+        targetDevice.ws.send(JSON.stringify({
+          type: "BROWSE_FILES",
+          path: data.path
+        }));
+      }
+
+      // File transfer - Upload file
+      if (data.type === "UPLOAD_FILE") {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          return;
+        }
+
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== "online") {
+          return;
+        }
+
+        targetDevice.ws.send(JSON.stringify({
+          type: "UPLOAD_FILE",
+          fileName: data.fileName,
+          fileData: data.fileData,
+          targetPath: data.targetPath
+        }));
+      }
+
+      // File transfer - Download file
+      if (data.type === "DOWNLOAD_FILE") {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          return;
+        }
+
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== "online") {
+          return;
+        }
+
+        targetDevice.ws.send(JSON.stringify({
+          type: "DOWNLOAD_FILE",
+          filePath: data.filePath
+        }));
+      }
     });
 
     ws.on("close", () => {
@@ -499,6 +600,50 @@ wss.on("connection", (ws, req) => {
             deviceName: device.deviceName,
             enabled: data.enabled,
             message: data.message
+          }));
+        }
+      });
+    }
+
+    // Forward system stats to authenticated dashboards
+    if (data.type === "SYSTEM_STATS") {
+      dashboardClients.forEach((dashboardWs) => {
+        const deviceId = `device-${device.deviceName.toLowerCase()}`;
+        if (dashboardWs.authenticatedDevices.has(deviceId)) {
+          dashboardWs.send(JSON.stringify({
+            type: "SYSTEM_STATS",
+            deviceName: device.deviceName,
+            stats: data.stats
+          }));
+        }
+      });
+    }
+
+    // Forward file list to authenticated dashboards
+    if (data.type === "FILE_LIST") {
+      dashboardClients.forEach((dashboardWs) => {
+        const deviceId = `device-${device.deviceName.toLowerCase()}`;
+        if (dashboardWs.authenticatedDevices.has(deviceId)) {
+          dashboardWs.send(JSON.stringify({
+            type: "FILE_LIST",
+            deviceName: device.deviceName,
+            files: data.files,
+            path: data.path
+          }));
+        }
+      });
+    }
+
+    // Forward file download data to authenticated dashboards
+    if (data.type === "FILE_DATA") {
+      dashboardClients.forEach((dashboardWs) => {
+        const deviceId = `device-${device.deviceName.toLowerCase()}`;
+        if (dashboardWs.authenticatedDevices.has(deviceId)) {
+          dashboardWs.send(JSON.stringify({
+            type: "FILE_DATA",
+            deviceName: device.deviceName,
+            fileName: data.fileName,
+            fileData: data.fileData
           }));
         }
       });

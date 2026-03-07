@@ -544,113 +544,153 @@ export default function Home() {
 			process.env.NEXT_PUBLIC_BACKEND_WS || "wss://vortix.onrender.com";
 		console.log("Backend URL:", backendWS);
 
-		const ws = new WebSocket(`${backendWS}?type=dashboard`);
-		// console.log(isExecuting)
+		let reconnectTimeout: NodeJS.Timeout;
+		let ws: WebSocket;
 
-		wsRef.current = ws;
+		const connect = () => {
+			try {
+				ws = new WebSocket(`${backendWS}?type=dashboard`);
+				wsRef.current = ws;
 
-		ws.onopen = () => {
-			console.log("Dashboard connected to backend");
-		};
+				ws.onopen = () => {
+					console.log("✅ Dashboard connected to backend");
+					setLogs((prev) => [...prev, "[SYSTEM] Connected to backend"]);
+				};
 
-		ws.onmessage = (event) => {
-			const data = JSON.parse(event.data);
-			console.log("Message received:", data.type, data);
+				ws.onmessage = (event) => {
+					const data = JSON.parse(event.data);
+					console.log("Message received:", data.type, data);
 
-			if (data.type === "DEVICES") {
-				console.log("Devices received:", data.devices);
-				data.devices.forEach((device: Device) => {
-					console.log(
-						`Device: ${device.deviceName}, authenticated: ${device.authenticated}, status: ${device.status}`,
+					if (data.type === "DEVICES") {
+						console.log("Devices received:", data.devices);
+						data.devices.forEach((device: Device) => {
+							console.log(
+								`Device: ${device.deviceName}, authenticated: ${device.authenticated}, status: ${device.status}`,
+							);
+						});
+						setDevices(data.devices);
+					}
+
+					if (data.type === "AUTH_SUCCESS") {
+						console.log("Device authenticated:", data.deviceName);
+						setAuthDialog(null);
+						setAuthPassword("");
+						setSelectedDevice(data.deviceName);
+					}
+
+					if (data.type === "AUTH_ERROR") {
+						console.error("Auth error:", data.error);
+						alert(`Authentication failed: ${data.error}`);
+					}
+
+					if (data.type === "EXECUTION_STARTED") {
+						console.log("Execution started");
+						setIsExecuting(true);
+					}
+
+					if (data.type === "PLAN_PREVIEW") {
+						console.log("Plan preview received:", data.steps);
+						setIsPlanning(false);
+						setPlanPreview(data.steps);
+					}
+
+					if (data.type === "PLAN_ERROR") {
+						console.error("Plan error:", data.error);
+						setIsPlanning(false);
+						setLogs((prev) => [...prev, `[ERROR] ${data.error}`]);
+						alert(
+							`AI Planning Error: ${data.error}\n\nPlease enter commands directly instead.`,
+						);
+					}
+
+					if (data.type === "APPROVAL_REQUIRED") {
+						setApprovalDialog({
+							isOpen: true,
+							command: data.command,
+							deviceName: data.deviceName,
+						});
+					}
+
+					if (data.type === "EXECUTION_FINISHED") {
+						setIsExecuting(false);
+						console.log("Execution finished");
+					}
+
+					if (data.type === "LOG") {
+						setLogs((prev) => [
+							...prev,
+							`[${data.deviceName}] ${data.message}`,
+						]);
+					}
+
+					if (data.type === "SCREEN_FRAME") {
+						setScreenStream(data.frame);
+					}
+
+					if (data.type === "AUTOSTART_STATUS") {
+						console.log("Auto-start status:", data.deviceName, data.enabled);
+						setAutoStartEnabled((prev) => ({
+							...prev,
+							[data.deviceName]: data.enabled,
+						}));
+						if (data.message) {
+							setLogs((prev) => [
+								...prev,
+								`[${data.deviceName}] ${data.message}`,
+							]);
+						}
+					}
+
+					if (data.type === "AUTOSTART_ERROR") {
+						console.error("Auto-start error:", data.message);
+						setLogs((prev) => [
+							...prev,
+							`[${data.deviceName}] ERROR: ${data.message}`,
+						]);
+						alert(`Auto-start error: ${data.message}`);
+					}
+				};
+
+				ws.onerror = (err) => {
+					console.error("❌ WebSocket error:", err);
+					console.error("Backend URL:", backendWS);
+					console.error(
+						"Make sure backend is running: cd backend && npm start",
 					);
-				});
-				setDevices(data.devices);
-			}
+					setLogs((prev) => [
+						...prev,
+						"[ERROR] Failed to connect to backend. Is it running?",
+					]);
+				};
 
-			if (data.type === "AUTH_SUCCESS") {
-				console.log("Device authenticated:", data.deviceName);
-				setAuthDialog(null);
-				setAuthPassword("");
-				setSelectedDevice(data.deviceName);
-			}
+				ws.onclose = () => {
+					console.log("⚠️ Dashboard WebSocket disconnected");
+					setLogs((prev) => [
+						...prev,
+						"[SYSTEM] Disconnected from backend. Reconnecting in 5s...",
+					]);
 
-			if (data.type === "AUTH_ERROR") {
-				console.error("Auth error:", data.error);
-				alert(`Authentication failed: ${data.error}`);
-			}
-
-			if (data.type === "EXECUTION_STARTED") {
-				console.log("Execution started");
-				setIsExecuting(true);
-			}
-
-			if (data.type === "PLAN_PREVIEW") {
-				console.log("Plan preview received:", data.steps);
-				setIsPlanning(false);
-				setPlanPreview(data.steps);
-			}
-
-			if (data.type === "PLAN_ERROR") {
-				console.error("Plan error:", data.error);
-				setIsPlanning(false);
-				setLogs((prev) => [...prev, `[ERROR] ${data.error}`]);
-				alert(
-					`AI Planning Error: ${data.error}\n\nPlease enter commands directly instead.`,
-				);
-			}
-
-			if (data.type === "APPROVAL_REQUIRED") {
-				setApprovalDialog({
-					isOpen: true,
-					command: data.command,
-					deviceName: data.deviceName,
-				});
-			}
-
-			if (data.type === "EXECUTION_FINISHED") {
-				setIsExecuting(false);
-				console.log("Execution finished");
-			}
-
-			if (data.type === "LOG") {
-				setLogs((prev) => [...prev, `[${data.deviceName}] ${data.message}`]);
-			}
-
-			if (data.type === "SCREEN_FRAME") {
-				setScreenStream(data.frame);
-			}
-
-			if (data.type === "AUTOSTART_STATUS") {
-				console.log("Auto-start status:", data.deviceName, data.enabled);
-				setAutoStartEnabled((prev) => ({
-					...prev,
-					[data.deviceName]: data.enabled,
-				}));
-				if (data.message) {
-					setLogs((prev) => [...prev, `[${data.deviceName}] ${data.message}`]);
-				}
-			}
-
-			if (data.type === "AUTOSTART_ERROR") {
-				console.error("Auto-start error:", data.message);
+					// Auto-reconnect after 5 seconds
+					reconnectTimeout = setTimeout(() => {
+						console.log("🔄 Attempting to reconnect...");
+						connect();
+					}, 5000);
+				};
+			} catch (error) {
+				console.error("Failed to create WebSocket:", error);
 				setLogs((prev) => [
 					...prev,
-					`[${data.deviceName}] ERROR: ${data.message}`,
+					"[ERROR] Failed to create WebSocket connection",
 				]);
-				alert(`Auto-start error: ${data.message}`);
 			}
-			// console.log("finish time:",isExecuting)
 		};
 
-		ws.onerror = (err) => {
-			console.error("WebSocket error:", err);
-		};
+		connect();
 
-		ws.onclose = () => {
-			console.log("Dashboard WebSocket disconnected");
+		return () => {
+			if (reconnectTimeout) clearTimeout(reconnectTimeout);
+			if (ws) ws.close();
 		};
-
-		return () => ws.close();
 	}, []);
 
 	// Auto-scroll when logs update (unless user scrolled up)

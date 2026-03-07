@@ -270,6 +270,144 @@ function startAgent() {
           }));
         }
 
+        // System stats
+        if (data.type === "GET_SYSTEM_STATS") {
+          const os = require('os');
+          const cpus = os.cpus();
+          const totalMem = os.totalmem();
+          const freeMem = os.freemem();
+
+          // Calculate CPU usage
+          let totalIdle = 0;
+          let totalTick = 0;
+          cpus.forEach(cpu => {
+            for (let type in cpu.times) {
+              totalTick += cpu.times[type];
+            }
+            totalIdle += cpu.times.idle;
+          });
+          const cpuUsage = 100 - ~~(100 * totalIdle / totalTick);
+
+          // Memory usage
+          const memoryUsage = ((totalMem - freeMem) / totalMem) * 100;
+
+          // Disk usage (simplified - would need platform-specific implementation)
+          const diskUsage = 50; // Placeholder
+
+          ws.send(JSON.stringify({
+            type: "SYSTEM_STATS",
+            stats: {
+              cpu: Math.round(cpuUsage),
+              memory: Math.round(memoryUsage),
+              disk: Math.round(diskUsage)
+            }
+          }));
+        }
+
+        // File browsing
+        if (data.type === "BROWSE_FILES") {
+          const fs = require('fs');
+          const path = require('path');
+
+          let targetPath = data.path || os.homedir();
+
+          // Handle special paths
+          if (targetPath === "Desktop") {
+            targetPath = path.join(os.homedir(), "Desktop");
+          } else if (targetPath === "Downloads") {
+            targetPath = path.join(os.homedir(), "Downloads");
+          } else if (targetPath === "Documents") {
+            targetPath = path.join(os.homedir(), "Documents");
+          }
+
+          try {
+            const items = fs.readdirSync(targetPath);
+            const files = items.map(item => {
+              const fullPath = path.join(targetPath, item);
+              const stats = fs.statSync(fullPath);
+              return {
+                name: item,
+                type: stats.isDirectory() ? "directory" : "file",
+                size: stats.isFile() ? stats.size : undefined,
+                path: fullPath
+              };
+            });
+
+            ws.send(JSON.stringify({
+              type: "FILE_LIST",
+              files,
+              path: targetPath
+            }));
+          } catch (err) {
+            console.error("Error browsing files:", err.message);
+            ws.send(JSON.stringify({
+              type: "FILE_LIST",
+              files: [],
+              path: targetPath,
+              error: err.message
+            }));
+          }
+        }
+
+        // File upload
+        if (data.type === "UPLOAD_FILE") {
+          const fs = require('fs');
+          const path = require('path');
+
+          let targetPath = data.targetPath || os.homedir();
+          if (targetPath === "Desktop") {
+            targetPath = path.join(os.homedir(), "Desktop");
+          } else if (targetPath === "Downloads") {
+            targetPath = path.join(os.homedir(), "Downloads");
+          }
+
+          const filePath = path.join(targetPath, data.fileName);
+          const fileBuffer = Buffer.from(data.fileData, 'base64');
+
+          try {
+            fs.writeFileSync(filePath, fileBuffer);
+            console.log(`File uploaded: ${filePath}`);
+            ws.send(JSON.stringify({
+              type: "LOG",
+              deviceName,
+              message: `✓ File uploaded: ${data.fileName}`
+            }));
+          } catch (err) {
+            console.error("Error uploading file:", err.message);
+            ws.send(JSON.stringify({
+              type: "LOG",
+              deviceName,
+              message: `✗ Upload failed: ${err.message}`
+            }));
+          }
+        }
+
+        // File download
+        if (data.type === "DOWNLOAD_FILE") {
+          const fs = require('fs');
+
+          try {
+            const fileBuffer = fs.readFileSync(data.filePath);
+            const base64 = fileBuffer.toString('base64');
+            const fileName = require('path').basename(data.filePath);
+
+            ws.send(JSON.stringify({
+              type: "FILE_DATA",
+              fileName,
+              fileData: base64
+            }));
+
+            console.log(`File downloaded: ${data.filePath}`);
+          } catch (err) {
+            console.error("Error downloading file:", err.message);
+            ws.send(JSON.stringify({
+              type: "LOG",
+              deviceName,
+              message: `✗ Download failed: ${err.message}`
+            }));
+          }
+        }
+
       } catch (err) {
         console.error("Invalid message received:", message.toString());
       }
