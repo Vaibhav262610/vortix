@@ -1,0 +1,38 @@
+========================================
+WHAT TO DO RIGHT NOW
+========================================
+
+Your dashboard can't connect because the BACKEND IS NOT RUNNING.
+
+DO THIS:
+
+1. Open a NEW terminal window
+
+2. Run these commands:
+   cd backend
+   npm start
+
+3. Wait for this message:
+   "Backend running on port 8080"
+
+4. Go back to your browser and press F5 (refresh)
+
+5. You should see:
+   "✅ Dashboard connected to backend successfully!"
+
+========================================
+
+OR USE THE AUTOMATIC SCRIPT:
+
+   start-backend-only.bat
+
+This will start the backend for you automatically.
+
+========================================
+
+THAT'S IT!
+
+The backend MUST be running for anything to work.
+Dashboard and Agent both need the backend to be running.
+
+========================================

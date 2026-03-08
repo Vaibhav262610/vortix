@@ -389,17 +389,21 @@ wss.on("connection", (ws, req) => {
 
       // System stats request
       if (data.type === "GET_SYSTEM_STATS") {
+        console.log("Backend: Received GET_SYSTEM_STATS request for", data.deviceName);
         const deviceId = `device-${data.deviceName.toLowerCase()}`;
 
         if (!ws.authenticatedDevices.has(deviceId)) {
+          console.log("Backend: Device not authenticated:", deviceId);
           return;
         }
 
         const targetDevice = devices.get(deviceId);
         if (!targetDevice || targetDevice.status !== "online") {
+          console.log("Backend: Device not found or offline:", deviceId);
           return;
         }
 
+        console.log("Backend: Forwarding GET_SYSTEM_STATS to agent:", deviceId);
         targetDevice.ws.send(JSON.stringify({
           type: "GET_SYSTEM_STATS"
         }));
@@ -607,9 +611,11 @@ wss.on("connection", (ws, req) => {
 
     // Forward system stats to authenticated dashboards
     if (data.type === "SYSTEM_STATS") {
+      console.log("Backend: Received SYSTEM_STATS from agent:", device.deviceName, data.stats);
       dashboardClients.forEach((dashboardWs) => {
         const deviceId = `device-${device.deviceName.toLowerCase()}`;
         if (dashboardWs.authenticatedDevices.has(deviceId)) {
+          console.log("Backend: Forwarding SYSTEM_STATS to dashboard for device:", device.deviceName);
           dashboardWs.send(JSON.stringify({
             type: "SYSTEM_STATS",
             deviceName: device.deviceName,

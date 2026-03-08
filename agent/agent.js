@@ -120,8 +120,11 @@ function startAgent() {
   console.log(`Platform: ${PLATFORM} (${IS_WINDOWS ? 'Windows' : IS_MAC ? 'macOS' : IS_LINUX ? 'Linux' : 'Unknown'})`);
   console.log("Connecting to backend...");
 
-  // Production backend URL - Render deployment
-  const BACKEND_URL = process.env.BACKEND_URL || 'wss://vortix.onrender.com';
+  // Backend URL - supports both local and production
+  // For production: set BACKEND_URL environment variable
+  // For local: defaults to ws://localhost:8080
+  const BACKEND_URL = process.env.BACKEND_URL || 'ws://localhost:8080';
+  console.log(`Backend URL: ${BACKEND_URL}`);
 
   let ws = null;
   let screenCaptureInterval = null;
@@ -129,10 +132,12 @@ function startAgent() {
   let isIntentionalClose = false;
 
   function connect() {
+    console.log(`Attempting connection to: ${BACKEND_URL}`);
     ws = new WebSocket(`${BACKEND_URL}?token=${encodeURIComponent(token)}`);
 
     ws.on("open", () => {
-      console.log("Authenticated and connected to backend");
+      console.log("✅ Authenticated and connected to backend successfully!");
+      console.log(`Connected to: ${BACKEND_URL}`);
 
       // Clear any reconnect timeout
       if (reconnectTimeout) {
@@ -173,7 +178,17 @@ function startAgent() {
     });
 
     ws.on("error", (err) => {
-      console.error("WebSocket error:", err.message);
+      console.error("=".repeat(50));
+      console.error("❌ WebSocket Connection Error!");
+      console.error("Error:", err.message);
+      console.error("Trying to connect to:", BACKEND_URL);
+      console.error("=".repeat(50));
+      console.error("Troubleshooting:");
+      console.error("1. Make sure backend is running: cd backend && npm start");
+      console.error("2. Backend should show: 'Backend running on port 8080'");
+      console.error("3. Check if port 8080 is open: netstat -an | findstr :8080");
+      console.error("4. Verify BACKEND_URL environment variable (if set)");
+      console.error("=".repeat(50));
     });
 
     let commandQueue = [];
@@ -272,6 +287,7 @@ function startAgent() {
 
         // System stats
         if (data.type === "GET_SYSTEM_STATS") {
+          console.log("Agent: Received GET_SYSTEM_STATS request");
           const os = require('os');
           const cpus = os.cpus();
           const totalMem = os.totalmem();
@@ -294,13 +310,17 @@ function startAgent() {
           // Disk usage (simplified - would need platform-specific implementation)
           const diskUsage = 50; // Placeholder
 
+          const statsData = {
+            cpu: Math.round(cpuUsage),
+            memory: Math.round(memoryUsage),
+            disk: Math.round(diskUsage)
+          };
+
+          console.log("Agent: Sending SYSTEM_STATS:", statsData);
+
           ws.send(JSON.stringify({
             type: "SYSTEM_STATS",
-            stats: {
-              cpu: Math.round(cpuUsage),
-              memory: Math.round(memoryUsage),
-              disk: Math.round(diskUsage)
-            }
+            stats: statsData
           }));
         }
 

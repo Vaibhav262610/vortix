@@ -567,21 +567,29 @@ export default function Home() {
 	useEffect(() => {
 		console.log("Connecting to backend WebSocket...");
 
-		// Use environment variable or fallback to Render URL
+		// Use environment variable or fallback to local development
 		const backendWS =
-			process.env.NEXT_PUBLIC_BACKEND_WS || "wss://vortix.onrender.com";
-		console.log("Backend URL:", backendWS);
+			process.env.NEXT_PUBLIC_BACKEND_WS || "ws://localhost:8080";
+
+		console.log("=".repeat(50));
+		console.log("🔌 WebSocket Connection Info:");
+		console.log("Environment Variable:", process.env.NEXT_PUBLIC_BACKEND_WS);
+		console.log("Using Backend URL:", backendWS);
+		console.log("=".repeat(50));
 
 		let reconnectTimeout: NodeJS.Timeout;
 		let ws: WebSocket;
 
 		const connect = () => {
 			try {
-				ws = new WebSocket(`${backendWS}?type=dashboard`);
+				const wsUrl = `${backendWS}?type=dashboard`;
+				console.log("🔄 Attempting to connect to:", wsUrl);
+				ws = new WebSocket(wsUrl);
 				wsRef.current = ws;
 
 				ws.onopen = () => {
-					console.log("✅ Dashboard connected to backend");
+					console.log("✅ Dashboard connected to backend successfully!");
+					console.log("Connected to:", backendWS);
 					setLogs((prev) => [...prev, "[SYSTEM] Connected to backend"]);
 				};
 
@@ -720,11 +728,22 @@ export default function Home() {
 				};
 
 				ws.onerror = (err) => {
-					console.error("❌ WebSocket error:", err);
-					console.error("Backend URL:", backendWS);
+					console.error("=".repeat(50));
+					console.error("❌ WebSocket Connection Error!");
+					console.error("Error details:", err);
+					console.error("Trying to connect to:", backendWS);
+					console.error("=".repeat(50));
+					console.error("Troubleshooting:");
 					console.error(
-						"Make sure backend is running: cd backend && npm start",
+						"1. Check if backend is running: cd backend && npm start",
 					);
+					console.error("2. Verify backend is on port 8080");
+					console.error(
+						"3. Check .env.local has: NEXT_PUBLIC_BACKEND_WS=ws://localhost:8080",
+					);
+					console.error("4. Restart dashboard after changing .env.local");
+					console.error("5. Run: diagnose-connection.bat");
+					console.error("=".repeat(50));
 					setLogs((prev) => [
 						...prev,
 						"[ERROR] Failed to connect to backend. Is it running?",
