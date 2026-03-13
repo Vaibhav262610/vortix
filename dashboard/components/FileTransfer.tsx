@@ -44,11 +44,11 @@ export function FileTransfer({
 
 	// Browse Downloads folder on mount
 	useEffect(() => {
-		if (ws && ws.readyState === WebSocket.OPEN && files.length === 0) {
+		if (ws && ws.readyState === WebSocket.OPEN) {
 			console.log("FileTransfer: Initial browse to Downloads folder");
 			browseFiles("Downloads");
 		}
-	}, [ws]);
+	}, [ws, deviceName]);
 
 	const browseFiles = (path: string) => {
 		if (!ws || ws.readyState !== WebSocket.OPEN) return;

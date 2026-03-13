@@ -484,6 +484,7 @@ export default function Home() {
 	>({});
 
 	const wsRef = useRef<WebSocket | null>(null);
+	const [wsConnected, setWsConnected] = useState(false);
 	const logsRef = useRef<HTMLDivElement | null>(null);
 	const [autoScroll, setAutoScroll] = useState(true);
 
@@ -563,7 +564,8 @@ export default function Home() {
 		console.log("Connecting to backend WebSocket...");
 
 		// Use environment variable or fallback to local development
-		const backendWS = "https://vortix.onrender.com";
+		const backendWS =
+			process.env.NEXT_PUBLIC_BACKEND_WS || "ws://localhost:8080";
 
 		console.log("=".repeat(50));
 		console.log("🔌 WebSocket Connection Info:");
@@ -585,6 +587,7 @@ export default function Home() {
 					console.log("✅ Dashboard connected to backend successfully!");
 					console.log("Connected to:", backendWS);
 					setLogs((prev) => [...prev, "[SYSTEM] Connected to backend"]);
+					setWsConnected(true);
 
 					// Send heartbeat every 30 seconds to keep connection alive
 					const heartbeatInterval = setInterval(() => {
@@ -609,6 +612,16 @@ export default function Home() {
 							console.log(
 								`Device: ${device.deviceName}, authenticated: ${device.authenticated}, status: ${device.status}`,
 							);
+
+							// Request auto-start status for authenticated devices
+							if (device.authenticated && ws.readyState === WebSocket.OPEN) {
+								ws.send(
+									JSON.stringify({
+										type: "GET_AUTOSTART_STATUS",
+										deviceName: device.deviceName,
+									}),
+								);
+							}
 						});
 						setDevices(data.devices);
 					}
@@ -766,6 +779,7 @@ export default function Home() {
 
 				ws.onclose = () => {
 					console.log("⚠️ Dashboard WebSocket disconnected");
+					setWsConnected(false);
 					setLogs((prev) => [
 						...prev,
 						"[SYSTEM] Disconnected from backend. Reconnecting in 5s...",
@@ -1995,6 +2009,7 @@ export default function Home() {
 			{/* File Transfer Modal */}
 			{showFileTransfer && (
 				<FileTransfer
+					key={selectedDevice}
 					deviceName={selectedDevice}
 					ws={wsRef.current}
 					onClose={() => setShowFileTransfer(false)}
@@ -2013,7 +2028,11 @@ export default function Home() {
 
 			{/* Widgets Sidebar - Fixed Right */}
 			<div className="fixed right-0 top-20 bottom-0 w-80 backdrop-blur-xl border-l p-4 space-y-4 overflow-y-auto z-20 bg-black/40 border-white/10">
-				<SystemStatsWidget deviceName={selectedDevice} ws={wsRef.current} />
+				<SystemStatsWidget
+					key={wsConnected ? "connected" : "disconnected"}
+					deviceName={selectedDevice}
+					ws={wsRef.current}
+				/>
 				<DeviceStatusWidget
 					devices={devices}
 					selectedDevice={selectedDevice}

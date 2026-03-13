@@ -296,41 +296,67 @@ function startAgent() {
 
         // System stats
         if (data.type === "GET_SYSTEM_STATS") {
-          console.log("Agent: Received GET_SYSTEM_STATS request");
           const os = require('os');
           const { exec } = require('child_process');
 
-          // Get accurate CPU usage (measure over 1 second)
+          // Get accurate CPU usage (measure over 500ms for faster response)
           const getCPUUsage = () => {
             return new Promise((resolve) => {
-              const startMeasure = os.cpus();
+              if (IS_WINDOWS) {
+                // Windows: Use wmic for more accurate CPU reading
+                exec('wmic cpu get loadpercentage', (err, stdout) => {
+                  if (err) {
+                    console.error("Error getting CPU usage:", err);
+                    // Fallback to Node.js method
+                    fallbackCPUMeasure(resolve);
+                    return;
+                  }
 
-              setTimeout(() => {
-                const endMeasure = os.cpus();
-
-                let totalIdle = 0;
-                let totalTick = 0;
-
-                for (let i = 0; i < startMeasure.length; i++) {
-                  const start = startMeasure[i].times;
-                  const end = endMeasure[i].times;
-
-                  const idleDiff = end.idle - start.idle;
-                  const totalDiff =
-                    (end.user - start.user) +
-                    (end.nice - start.nice) +
-                    (end.sys - start.sys) +
-                    (end.idle - start.idle) +
-                    (end.irq - start.irq);
-
-                  totalIdle += idleDiff;
-                  totalTick += totalDiff;
-                }
-
-                const cpuUsage = 100 - (100 * totalIdle / totalTick);
-                resolve(Math.round(cpuUsage));
-              }, 1000);
+                  const lines = stdout.trim().split('\n');
+                  if (lines.length >= 2) {
+                    const cpuLoad = parseInt(lines[1].trim());
+                    if (!isNaN(cpuLoad)) {
+                      resolve(cpuLoad);
+                      return;
+                    }
+                  }
+                  fallbackCPUMeasure(resolve);
+                });
+              } else {
+                // Mac/Linux: Use Node.js method
+                fallbackCPUMeasure(resolve);
+              }
             });
+          };
+
+          const fallbackCPUMeasure = (resolve) => {
+            const startMeasure = os.cpus();
+
+            setTimeout(() => {
+              const endMeasure = os.cpus();
+
+              let totalIdle = 0;
+              let totalTick = 0;
+
+              for (let i = 0; i < startMeasure.length; i++) {
+                const start = startMeasure[i].times;
+                const end = endMeasure[i].times;
+
+                const idleDiff = end.idle - start.idle;
+                const totalDiff =
+                  (end.user - start.user) +
+                  (end.nice - start.nice) +
+                  (end.sys - start.sys) +
+                  (end.idle - start.idle) +
+                  (end.irq - start.irq);
+
+                totalIdle += idleDiff;
+                totalTick += totalDiff;
+              }
+
+              const cpuUsage = 100 - (100 * totalIdle / totalTick);
+              resolve(Math.round(cpuUsage));
+            }, 500);
           };
 
           // Get accurate disk usage
@@ -396,8 +422,6 @@ function startAgent() {
               memory: Math.round(memoryUsage),
               disk: diskUsage
             };
-
-            console.log("Agent: Sending SYSTEM_STATS:", statsData);
 
             ws.send(JSON.stringify({
               type: "SYSTEM_STATS",

@@ -23,20 +23,12 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 
 	useEffect(() => {
 		if (!ws || !deviceName) {
-			console.log("SystemStatsWidget: No WebSocket or device selected");
 			return;
 		}
-
-		console.log("SystemStatsWidget: Starting stats monitoring for", deviceName);
 
 		const handleMessage = (event: MessageEvent) => {
 			const data = JSON.parse(event.data);
 			if (data.type === "SYSTEM_STATS" && data.deviceName === deviceName) {
-				console.log(
-					"SystemStatsWidget: Received stats for",
-					deviceName,
-					data.stats,
-				);
 				setStats(data.stats);
 			}
 		};
@@ -45,10 +37,6 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 
 		// Request stats immediately
 		if (ws.readyState === WebSocket.OPEN) {
-			console.log(
-				"SystemStatsWidget: Requesting initial stats for",
-				deviceName,
-			);
 			ws.send(
 				JSON.stringify({
 					type: "GET_SYSTEM_STATS",
@@ -57,13 +45,9 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 			);
 		}
 
-		// Request stats every 3 seconds
+		// Request stats every 1 second for real-time updates
 		const interval = setInterval(() => {
 			if (ws.readyState === WebSocket.OPEN) {
-				console.log(
-					"SystemStatsWidget: Requesting stats update for",
-					deviceName,
-				);
 				ws.send(
 					JSON.stringify({
 						type: "GET_SYSTEM_STATS",
@@ -71,13 +55,9 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 					}),
 				);
 			}
-		}, 3000);
+		}, 1000);
 
 		return () => {
-			console.log(
-				"SystemStatsWidget: Stopping stats monitoring for",
-				deviceName,
-			);
 			ws.removeEventListener("message", handleMessage);
 			clearInterval(interval);
 		};
@@ -99,7 +79,7 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 			</div>
 			<div className="h-2 bg-white/5 rounded-full overflow-hidden">
 				<div
-					className={`h-full ${color} transition-all duration-500`}
+					className={`h-full ${color} transition-all duration-700 ease-in-out`}
 					style={{ width: `${value}%` }}
 				/>
 			</div>
