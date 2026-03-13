@@ -861,19 +861,34 @@ ${isMac ? `- Open Notion app: open -a Notion
 - Open Chrome: open -a "Google Chrome"
 - Open Safari: open -a Safari
 - Open Firefox: open -a Firefox
-- Generic app: open -a "<AppName>"` : `- Open app: <appname> (if in PATH)
-- Open with xdg: xdg-open <appname>
+- Generic app: open -a "<AppName>"` : `- Text Editor: gedit (or nano, vim, kate)
 - Open Notion: notion-app (if installed)
 - Open Spotify: spotify (if installed)
 - Open VS Code: code
 - Open Chrome: google-chrome
-- Open Firefox: firefox`}
+- Open Firefox: firefox
+- File Manager: nautilus or dolphin or thunar
+- Terminal: gnome-terminal or konsole or xterm
+- Calculator: gnome-calculator or kcalc
+- Generic app: <appname> (just the command name, no paths)
+
+IMPORTANT FOR LINUX: 
+- Notepad does NOT exist on Linux. Use: gedit, nano, vim, or kate instead
+- Paint does NOT exist on Linux. Use: gimp, krita, or kolourpaint instead
+- Calculator: use gnome-calculator or kcalc
+- DO NOT use xdg-open with app names, just run the app command directly`}
 
 IMPORTANT: When user says "open [app name]", ALWAYS try to open the installed application first. Only open websites if explicitly asked for "website" or "browser".
 
 EXAMPLES:
 Request: "open notion"
-Response: {"steps": [{"command": "${isMac ? 'open -a Notion' : 'notion-app || xdg-open notion://'}"}]}
+Response: {"steps": [{"command": "${isMac ? 'open -a Notion' : 'notion-app'}"}]}
+
+Request: "open notepad" (Linux)
+Response: {"steps": [{"command": "gedit"}]}
+
+Request: "start text editor" (Linux)
+Response: {"steps": [{"command": "gedit"}]}
 
 Request: "open notion website"
 Response: {"steps": [{"command": "${isMac ? 'open' : 'xdg-open'} https://notion.so"}]}

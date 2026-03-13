@@ -563,8 +563,7 @@ export default function Home() {
 		console.log("Connecting to backend WebSocket...");
 
 		// Use environment variable or fallback to local development
-		const backendWS =
-			process.env.NEXT_PUBLIC_BACKEND_WS || "ws://localhost:8080";
+		const backendWS = "https://vortix.onrender.com";
 
 		console.log("=".repeat(50));
 		console.log("🔌 WebSocket Connection Info:");
