@@ -22,10 +22,11 @@ export function FileTransfer({
 	onClose,
 	fileListData,
 }: FileTransferProps) {
-	const [currentPath, setCurrentPath] = useState("");
+	const [currentPath, setCurrentPath] = useState("Downloads");
 	const [files, setFiles] = useState<FileItem[]>([]);
 	const [uploading, setUploading] = useState(false);
 	const [uploadProgress, setUploadProgress] = useState(0);
+	const [uploadMessage, setUploadMessage] = useState("");
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	// Update files when fileListData changes
@@ -33,8 +34,21 @@ export function FileTransfer({
 		if (fileListData) {
 			setFiles(fileListData.files);
 			setCurrentPath(fileListData.path);
+			console.log(
+				"FileTransfer: Updated file list",
+				fileListData.files.length,
+				"files",
+			);
 		}
 	}, [fileListData]);
+
+	// Browse Downloads folder on mount
+	useEffect(() => {
+		if (ws && ws.readyState === WebSocket.OPEN && files.length === 0) {
+			console.log("FileTransfer: Initial browse to Downloads folder");
+			browseFiles("Downloads");
+		}
+	}, [ws]);
 
 	const browseFiles = (path: string) => {
 		if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -59,20 +73,53 @@ export function FileTransfer({
 		reader.onload = () => {
 			const base64 = (reader.result as string).split(",")[1];
 
+			// Simulate upload progress
+			let progress = 0;
+			const progressInterval = setInterval(() => {
+				progress += 10;
+				setUploadProgress(Math.min(progress, 90));
+			}, 100);
+
 			ws.send(
 				JSON.stringify({
 					type: "UPLOAD_FILE",
 					deviceName,
 					fileName: file.name,
 					fileData: base64,
-					targetPath: currentPath,
+					targetPath: currentPath || "Downloads",
 				}),
 			);
 
+			// Wait for upload to complete, then refresh
 			setTimeout(() => {
-				setUploading(false);
+				clearInterval(progressInterval);
 				setUploadProgress(100);
-				browseFiles(currentPath);
+
+				// Show success message
+				setUploadMessage(
+					`✓ ${file.name} uploaded successfully to ${currentPath || "Downloads"}!`,
+				);
+
+				// Refresh the file list after upload
+				setTimeout(() => {
+					setUploading(false);
+					setUploadProgress(0);
+
+					// Refresh current directory
+					const pathToRefresh = currentPath || "Downloads";
+					console.log("Refreshing file list for path:", pathToRefresh);
+					browseFiles(pathToRefresh);
+
+					// Reset file input
+					if (fileInputRef.current) {
+						fileInputRef.current.value = "";
+					}
+
+					// Clear success message after 3 seconds
+					setTimeout(() => {
+						setUploadMessage("");
+					}, 3000);
+				}, 500);
 			}, 1000);
 		};
 
@@ -176,7 +223,9 @@ export function FileTransfer({
 							<p className="text-sm text-white/80 mb-1">
 								Click to upload or drag and drop
 							</p>
-							<p className="text-xs text-white/40">Any file type supported</p>
+							<p className="text-xs text-white/40">
+								Files will be uploaded to: {currentPath || "Downloads"}
+							</p>
 						</label>
 					</div>
 
@@ -194,25 +243,43 @@ export function FileTransfer({
 							</div>
 						</div>
 					)}
+
+					{uploadMessage && (
+						<div className="mt-4 px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/50">
+							<p className="text-sm text-emerald-400">{uploadMessage}</p>
+						</div>
+					)}
 				</div>
 
 				{/* File Browser */}
 				<div className="flex-1 overflow-y-auto p-6">
 					<div className="mb-4 flex items-center gap-2">
 						<button
-							onClick={() => browseFiles("")}
-							className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-white/80 transition">
-							Home
+							onClick={() => browseFiles("Downloads")}
+							className={`px-4 py-2 rounded-lg border text-sm transition ${
+								currentPath.includes("Downloads")
+									? "bg-blue-500/20 border-blue-500/50 text-blue-400"
+									: "bg-white/5 hover:bg-white/10 border-white/10 text-white/80"
+							}`}>
+							Downloads
 						</button>
 						<button
 							onClick={() => browseFiles("Desktop")}
-							className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-white/80 transition">
+							className={`px-4 py-2 rounded-lg border text-sm transition ${
+								currentPath.includes("Desktop")
+									? "bg-blue-500/20 border-blue-500/50 text-blue-400"
+									: "bg-white/5 hover:bg-white/10 border-white/10 text-white/80"
+							}`}>
 							Desktop
 						</button>
 						<button
-							onClick={() => browseFiles("Downloads")}
-							className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-white/80 transition">
-							Downloads
+							onClick={() => browseFiles("Documents")}
+							className={`px-4 py-2 rounded-lg border text-sm transition ${
+								currentPath.includes("Documents")
+									? "bg-blue-500/20 border-blue-500/50 text-blue-400"
+									: "bg-white/5 hover:bg-white/10 border-white/10 text-white/80"
+							}`}>
+							Documents
 						</button>
 					</div>
 

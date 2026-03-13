@@ -7,7 +7,6 @@ import { RecentCommandsWidget } from "../../components/RecentCommandsWidget";
 import { DeviceStatusWidget } from "../../components/DeviceStatusWidget";
 import { FileTransfer } from "../../components/FileTransfer";
 import { MultiDeviceSelector } from "../../components/MultiDeviceSelector";
-import { useTheme } from "../../contexts/ThemeContext";
 
 type Device = {
 	deviceName: string;
@@ -457,10 +456,6 @@ const Icon = ({
 };
 
 export default function Home() {
-	const themeContext = useTheme();
-	const theme = themeContext?.theme || "dark";
-	const toggleTheme = themeContext?.toggleTheme || (() => {});
-
 	const [isPlanning, setIsPlanning] = useState(false);
 	const [isExecuting, setIsExecuting] = useState(false);
 	const [planPreview, setPlanPreview] = useState<any[]>([]);
@@ -591,6 +586,19 @@ export default function Home() {
 					console.log("✅ Dashboard connected to backend successfully!");
 					console.log("Connected to:", backendWS);
 					setLogs((prev) => [...prev, "[SYSTEM] Connected to backend"]);
+					setWs(ws);
+
+					// Send heartbeat every 30 seconds to keep connection alive
+					const heartbeatInterval = setInterval(() => {
+						if (ws.readyState === WebSocket.OPEN) {
+							ws.send(JSON.stringify({ type: "DASHBOARD_HEARTBEAT" }));
+						} else {
+							clearInterval(heartbeatInterval);
+						}
+					}, 30000);
+
+					// Store interval for cleanup
+					(ws as any).heartbeatInterval = heartbeatInterval;
 				};
 
 				ws.onmessage = (event) => {
@@ -710,15 +718,23 @@ export default function Home() {
 
 					// Handle file list response
 					if (data.type === "FILE_LIST") {
-						console.log("File list received:", data.files);
+						console.log(
+							"Dashboard: File list received for",
+							data.deviceName,
+							":",
+							data.files?.length,
+							"files",
+						);
 						setFileListData({
 							files: data.files || [],
 							path: data.path || "",
 						});
-						setLogs((prev) => [
-							...prev,
-							`[${data.deviceName}] Browsing: ${data.path || "Home"}`,
-						]);
+						if (data.deviceName) {
+							setLogs((prev) => [
+								...prev,
+								`[${data.deviceName}] Browsing: ${data.path || "Home"} (${data.files?.length || 0} items)`,
+							]);
+						}
 					}
 
 					// Handle system stats (already handled by SystemStatsWidget, just log)
@@ -776,7 +792,13 @@ export default function Home() {
 
 		return () => {
 			if (reconnectTimeout) clearTimeout(reconnectTimeout);
-			if (ws) ws.close();
+			if (wsRef.current) {
+				// Clear heartbeat interval
+				if ((wsRef.current as any).heartbeatInterval) {
+					clearInterval((wsRef.current as any).heartbeatInterval);
+				}
+				wsRef.current.close();
+			}
 		};
 	}, []);
 
@@ -886,19 +908,9 @@ export default function Home() {
 	};
 
 	return (
-		<div
-			className={`min-h-screen ${
-				theme === "dark"
-					? "bg-[#0d0d0f] text-white"
-					: "bg-gray-50 text-gray-900"
-			}`}>
+		<div className="min-h-screen bg-[#0d0d0f] text-white">
 			{/* Header */}
-			<div
-				className={`border-b backdrop-blur-sm sticky top-0 z-30 ${
-					theme === "dark"
-						? "border-white/10 bg-black/20"
-						: "border-gray-200 bg-white/80"
-				}`}>
+			<div className="border-b backdrop-blur-sm sticky top-0 z-30 border-white/10 bg-black/20">
 				<div className="container mx-auto px-4 py-4 flex items-center justify-between">
 					<div className="flex items-center gap-4">
 						<a
@@ -911,13 +923,6 @@ export default function Home() {
 						</a>
 					</div>
 					<div className="flex items-center gap-3">
-						{/* Theme Toggle */}
-						<button
-							onClick={toggleTheme}
-							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition"
-							title="Toggle theme">
-							{theme === "dark" ? "🌙" : "☀️"}
-						</button>
 						<a
 							href="/setup"
 							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
@@ -2009,12 +2014,7 @@ export default function Home() {
 			)}
 
 			{/* Widgets Sidebar - Fixed Right */}
-			<div
-				className={`fixed right-0 top-20 bottom-0 w-80 backdrop-blur-xl border-l p-4 space-y-4 overflow-y-auto z-20 ${
-					theme === "dark"
-						? "bg-black/40 border-white/10"
-						: "bg-white/60 border-gray-200"
-				}`}>
+			<div className="fixed right-0 top-20 bottom-0 w-80 backdrop-blur-xl border-l p-4 space-y-4 overflow-y-auto z-20 bg-black/40 border-white/10">
 				<SystemStatsWidget deviceName={selectedDevice} ws={wsRef.current} />
 				<DeviceStatusWidget
 					devices={devices}

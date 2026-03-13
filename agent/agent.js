@@ -289,39 +289,127 @@ function startAgent() {
         if (data.type === "GET_SYSTEM_STATS") {
           console.log("Agent: Received GET_SYSTEM_STATS request");
           const os = require('os');
-          const cpus = os.cpus();
-          const totalMem = os.totalmem();
-          const freeMem = os.freemem();
+          const { exec } = require('child_process');
 
-          // Calculate CPU usage
-          let totalIdle = 0;
-          let totalTick = 0;
-          cpus.forEach(cpu => {
-            for (let type in cpu.times) {
-              totalTick += cpu.times[type];
-            }
-            totalIdle += cpu.times.idle;
-          });
-          const cpuUsage = 100 - ~~(100 * totalIdle / totalTick);
+          // Get accurate CPU usage (measure over 1 second)
+          const getCPUUsage = () => {
+            return new Promise((resolve) => {
+              const startMeasure = os.cpus();
 
-          // Memory usage
-          const memoryUsage = ((totalMem - freeMem) / totalMem) * 100;
+              setTimeout(() => {
+                const endMeasure = os.cpus();
 
-          // Disk usage (simplified - would need platform-specific implementation)
-          const diskUsage = 50; // Placeholder
+                let totalIdle = 0;
+                let totalTick = 0;
 
-          const statsData = {
-            cpu: Math.round(cpuUsage),
-            memory: Math.round(memoryUsage),
-            disk: Math.round(diskUsage)
+                for (let i = 0; i < startMeasure.length; i++) {
+                  const start = startMeasure[i].times;
+                  const end = endMeasure[i].times;
+
+                  const idleDiff = end.idle - start.idle;
+                  const totalDiff =
+                    (end.user - start.user) +
+                    (end.nice - start.nice) +
+                    (end.sys - start.sys) +
+                    (end.idle - start.idle) +
+                    (end.irq - start.irq);
+
+                  totalIdle += idleDiff;
+                  totalTick += totalDiff;
+                }
+
+                const cpuUsage = 100 - (100 * totalIdle / totalTick);
+                resolve(Math.round(cpuUsage));
+              }, 1000);
+            });
           };
 
-          console.log("Agent: Sending SYSTEM_STATS:", statsData);
+          // Get accurate disk usage
+          const getDiskUsage = () => {
+            return new Promise((resolve) => {
+              if (IS_WINDOWS) {
+                // Windows: Get C: drive usage
+                exec('wmic logicaldisk where "DeviceID=\'C:\'" get Size,FreeSpace', (err, stdout) => {
+                  if (err) {
+                    console.error("Error getting disk usage:", err);
+                    resolve(0);
+                    return;
+                  }
 
-          ws.send(JSON.stringify({
-            type: "SYSTEM_STATS",
-            stats: statsData
-          }));
+                  const lines = stdout.trim().split('\n');
+                  if (lines.length >= 2) {
+                    const values = lines[1].trim().split(/\s+/);
+                    if (values.length >= 2) {
+                      const freeSpace = parseInt(values[0]);
+                      const totalSpace = parseInt(values[1]);
+                      const usedSpace = totalSpace - freeSpace;
+                      const diskUsage = (usedSpace / totalSpace) * 100;
+                      resolve(Math.round(diskUsage));
+                      return;
+                    }
+                  }
+                  resolve(0);
+                });
+              } else if (IS_MAC || IS_LINUX) {
+                // Mac/Linux: Get root partition usage
+                exec('df -h / | tail -1', (err, stdout) => {
+                  if (err) {
+                    console.error("Error getting disk usage:", err);
+                    resolve(0);
+                    return;
+                  }
+
+                  const parts = stdout.trim().split(/\s+/);
+                  if (parts.length >= 5) {
+                    const usagePercent = parts[4].replace('%', '');
+                    resolve(parseInt(usagePercent));
+                    return;
+                  }
+                  resolve(0);
+                });
+              } else {
+                resolve(0);
+              }
+            });
+          };
+
+          // Get all stats
+          Promise.all([
+            getCPUUsage(),
+            getDiskUsage()
+          ]).then(([cpuUsage, diskUsage]) => {
+            const totalMem = os.totalmem();
+            const freeMem = os.freemem();
+            const memoryUsage = ((totalMem - freeMem) / totalMem) * 100;
+
+            const statsData = {
+              cpu: cpuUsage,
+              memory: Math.round(memoryUsage),
+              disk: diskUsage
+            };
+
+            console.log("Agent: Sending SYSTEM_STATS:", statsData);
+
+            ws.send(JSON.stringify({
+              type: "SYSTEM_STATS",
+              stats: statsData
+            }));
+          }).catch(err => {
+            console.error("Error collecting stats:", err);
+            // Send fallback data
+            const totalMem = os.totalmem();
+            const freeMem = os.freemem();
+            const memoryUsage = ((totalMem - freeMem) / totalMem) * 100;
+
+            ws.send(JSON.stringify({
+              type: "SYSTEM_STATS",
+              stats: {
+                cpu: 0,
+                memory: Math.round(memoryUsage),
+                disk: 0
+              }
+            }));
+          });
         }
 
         // File browsing
@@ -353,6 +441,7 @@ function startAgent() {
               };
             });
 
+            console.log(`Agent: Sending FILE_LIST for ${targetPath} with ${files.length} items`);
             ws.send(JSON.stringify({
               type: "FILE_LIST",
               files,
@@ -379,6 +468,8 @@ function startAgent() {
             targetPath = path.join(os.homedir(), "Desktop");
           } else if (targetPath === "Downloads") {
             targetPath = path.join(os.homedir(), "Downloads");
+          } else if (targetPath === "Documents") {
+            targetPath = path.join(os.homedir(), "Documents");
           }
 
           const filePath = path.join(targetPath, data.fileName);
@@ -386,14 +477,14 @@ function startAgent() {
 
           try {
             fs.writeFileSync(filePath, fileBuffer);
-            console.log(`File uploaded: ${filePath}`);
+            console.log(`Agent: File uploaded successfully: ${filePath}`);
             ws.send(JSON.stringify({
               type: "LOG",
               deviceName,
-              message: `✓ File uploaded: ${data.fileName}`
+              message: `✓ File uploaded: ${data.fileName} to ${targetPath}`
             }));
           } catch (err) {
-            console.error("Error uploading file:", err.message);
+            console.error("Agent: Error uploading file:", err.message);
             ws.send(JSON.stringify({
               type: "LOG",
               deviceName,

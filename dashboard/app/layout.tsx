@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { ThemeProvider } from "../contexts/ThemeContext";
 
 const inter = Inter({
 	variable: "--font-sans",
@@ -30,7 +29,7 @@ export default function RootLayout({
 		<html lang="en" className="dark">
 			<body
 				className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
-				<ThemeProvider>{children}</ThemeProvider>
+				{children}
 			</body>
 		</html>
 	);

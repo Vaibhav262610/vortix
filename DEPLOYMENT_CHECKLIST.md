@@ -1,325 +1,298 @@
-# 🚀 Deployment Checklist
+# Vortix Deployment Checklist
 
 ## Pre-Deployment
 
-### Code Review
+### Code Quality
 
-- [ ] All new features tested locally
-- [ ] No console errors
-- [ ] No TypeScript errors
-- [ ] Code is clean and commented
-- [ ] Removed debug console.logs
+- [x] Remove all console.log statements (or keep for debugging)
+- [x] Remove unused imports
+- [x] Fix all TypeScript/ESLint errors
+- [x] Remove theme toggle (fixed to dark mode)
+- [x] Test all features locally
 
-### Testing
+### Security
 
-- [ ] Theme toggle works
-- [ ] Multi-device execution works
-- [ ] File upload works
-- [ ] File download works
-- [ ] System stats display correctly
-- [ ] All widgets functional
-- [ ] Auto-start verified on all platforms
-- [ ] Screen sharing works
-- [ ] All modals open/close correctly
+- [x] Password hashing implemented (SHA-256)
+- [x] No hardcoded credentials
+- [x] Environment variables for sensitive data
+- [x] API keys stored in browser localStorage only
+- [x] Device authentication required
+
+### Performance
+
+- [x] WebSocket heartbeat implemented
+- [x] Auto-reconnect on disconnect
+- [x] Efficient file transfer (base64)
+- [x] System stats throttled to 3-second intervals
+- [x] Proper cleanup on component unmount
+
+## Backend Deployment
+
+### Platform: Railway/Render/Heroku
+
+1. **Create New Project**
+   - [ ] Sign up for hosting platform
+   - [ ] Create new project
+   - [ ] Connect GitHub repository (optional)
+
+2. **Configure Environment**
+   - [ ] Set `PORT` environment variable (or use auto-detect)
+   - [ ] Set Node.js version (16+)
+   - [ ] Set build command: `npm install`
+   - [ ] Set start command: `npm start`
+
+3. **Deploy**
+   - [ ] Push code or trigger deployment
+   - [ ] Wait for build to complete
+   - [ ] Check logs for errors
+   - [ ] Note the deployed URL (e.g., `https://vortix-backend.railway.app`)
+
+4. **Test**
+   - [ ] WebSocket connection works
+   - [ ] Can connect from local agent
+   - [ ] Logs show connections
+
+## Dashboard Deployment
+
+### Platform: Vercel/Netlify
+
+1. **Create New Project**
+   - [ ] Sign up for hosting platform
+   - [ ] Import GitHub repository
+   - [ ] Select `dashboard` folder as root
+
+2. **Configure Environment**
+   - [ ] Set `NEXT_PUBLIC_BACKEND_WS` to backend WebSocket URL
+     - Example: `wss://vortix-backend.railway.app`
+   - [ ] Set framework preset: Next.js
+   - [ ] Set build command: `npm run build`
+   - [ ] Set output directory: `.next`
+
+3. **Deploy**
+   - [ ] Trigger deployment
+   - [ ] Wait for build to complete
+   - [ ] Check build logs for errors
+   - [ ] Note the deployed URL (e.g., `https://vortix.vercel.app`)
+
+4. **Test**
+   - [ ] Dashboard loads correctly
+   - [ ] WebSocket connects to backend
+   - [ ] Can authenticate devices
+   - [ ] All features work
+
+## Agent Distribution
+
+### Option 1: NPM Package (Recommended)
+
+1. **Publish to NPM**
+   - [ ] Update `package.json` version
+   - [ ] Set `BACKEND_URL` in code or docs
+   - [ ] Run `npm publish`
+   - [ ] Test installation: `npm install -g vortix-agent`
+
+2. **User Installation**
+   ```bash
+   npm install -g vortix-agent
+   vortix start
+   ```
+
+### Option 2: Direct Distribution
+
+1. **Package Agent**
+   - [ ] Create ZIP file with agent folder
+   - [ ] Include README with setup instructions
+   - [ ] Include environment variable template
+
+2. **User Installation**
+   ```bash
+   # Extract ZIP
+   cd agent
+   npm install
+   # Set BACKEND_URL environment variable
+   node agent.js start
+   ```
+
+## Post-Deployment
+
+### Verification
+
+1. **Backend**
+   - [ ] WebSocket server running
+   - [ ] Accepts connections
+   - [ ] Logs show activity
+   - [ ] No memory leaks
+
+2. **Dashboard**
+   - [ ] Loads without errors
+   - [ ] Connects to backend
+   - [ ] UI responsive
+   - [ ] All pages work
+
+3. **Agent**
+   - [ ] Connects to backend
+   - [ ] Authenticates successfully
+   - [ ] Executes commands
+   - [ ] System stats update
+   - [ ] File transfer works
+
+### Monitoring
+
+- [ ] Set up error tracking (Sentry, LogRocket)
+- [ ] Monitor WebSocket connections
+- [ ] Track user activity
+- [ ] Monitor server resources
+- [ ] Set up alerts for downtime
 
 ### Documentation
 
-- [ ] README updated with new features
-- [ ] Screenshots added
-- [ ] User guide updated
-- [ ] API documentation updated (if needed)
+- [ ] Update README with production URLs
+- [ ] Create user guide
+- [ ] Document API endpoints
+- [ ] Create troubleshooting guide
+- [ ] Add FAQ section
 
----
+## Environment Variables Summary
 
-## Backend Deployment (Render/Railway)
+### Backend
 
-### 1. Update Backend Code
-
-```bash
-cd backend
-git add server.js
-git commit -m "feat: add multi-device, file transfer, system stats"
-git push
+```env
+PORT=8080  # Auto-detected by most platforms
 ```
 
-### 2. Verify Deployment
+### Dashboard
 
-- [ ] Backend URL accessible
-- [ ] WebSocket connection works
-- [ ] No errors in logs
-- [ ] All message handlers working
-
-### 3. Environment Variables
-
-- [ ] `PORT` set correctly
-- [ ] `GROQ_API_KEY` set (if using)
-- [ ] `NODE_ENV=production`
-
----
-
-## Agent Deployment
-
-### Windows
-
-```bash
-# On each Windows PC:
-1. Update agent code
-2. Run as Administrator:
-   cd agent
-   node agent.js enable-autostart
-3. Restart to verify auto-start
+```env
+NEXT_PUBLIC_BACKEND_WS=wss://your-backend-url.com
 ```
 
-### macOS
+### Agent
 
-```bash
-# On each Mac:
-1. Update agent code
-2. Run:
-   cd agent
-   node agent.js enable-autostart
-3. Restart to verify auto-start
+```env
+BACKEND_URL=wss://your-backend-url.com
 ```
 
-### Linux
+## Testing Checklist
 
-```bash
-# On each Linux machine:
-1. Update agent code
-2. Run:
-   cd agent
-   node agent.js enable-autostart
-3. Restart to verify auto-start
-```
+### Functional Tests
 
----
+- [ ] Device connection
+- [ ] Device authentication
+- [ ] Command execution
+- [ ] Multi-device execution
+- [ ] File upload
+- [ ] File download
+- [ ] File browsing
+- [ ] System stats display
+- [ ] Screen sharing
+- [ ] Auto-start toggle
+- [ ] Command history
+- [ ] Quick commands
+- [ ] AI planning (with API key)
 
-## Dashboard Deployment (Vercel)
+### Cross-Platform Tests
 
-### 1. Update Dashboard Code
-
-```bash
-cd dashboard
-git add .
-git commit -m "feat: add theme toggle, widgets, file transfer, multi-device"
-git push
-```
-
-### 2. Vercel Deployment
-
-- [ ] Push to GitHub
-- [ ] Vercel auto-deploys
-- [ ] Check deployment logs
-- [ ] Verify no build errors
-
-### 3. Environment Variables (Vercel)
-
-- [ ] `NEXT_PUBLIC_BACKEND_WS` set to production backend URL
-  - Example: `wss://vortix.onrender.com`
-
-### 4. Verify Deployment
-
-- [ ] Dashboard loads
-- [ ] Theme toggle works
-- [ ] Can connect to backend
-- [ ] All features accessible
-
----
-
-## Post-Deployment Testing
-
-### Smoke Tests
-
-- [ ] Open dashboard in production
-- [ ] Connect an agent
-- [ ] Authenticate device
-- [ ] Toggle theme
-- [ ] Execute a command
-- [ ] Try file transfer
-- [ ] Check system stats
-- [ ] Test multi-device (if multiple agents)
+- [ ] Windows agent
+- [ ] macOS agent
+- [ ] Linux agent
+- [ ] Chrome browser
+- [ ] Firefox browser
+- [ ] Safari browser
+- [ ] Edge browser
 
 ### Performance Tests
 
-- [ ] Page load time < 3s
-- [ ] WebSocket connection stable
-- [ ] No memory leaks
-- [ ] File transfer works for large files
-- [ ] Multiple devices don't cause lag
+- [ ] Multiple devices (5+)
+- [ ] Large file transfer (10MB)
+- [ ] Long-running connection (1+ hour)
+- [ ] Rapid command execution
+- [ ] Screen share performance
 
-### Browser Compatibility
+### Security Tests
 
-- [ ] Chrome
-- [ ] Firefox
-- [ ] Safari
-- [ ] Edge
-
-### Mobile Testing
-
-- [ ] Responsive design works
-- [ ] Touch interactions work
-- [ ] Modals display correctly
-
----
+- [ ] Invalid password rejected
+- [ ] Unauthenticated access blocked
+- [ ] XSS prevention
+- [ ] CSRF protection
+- [ ] Rate limiting (if implemented)
 
 ## Rollback Plan
 
-If something goes wrong:
+If deployment fails:
 
-### Backend Rollback
+1. **Backend**
+   - [ ] Revert to previous deployment
+   - [ ] Check logs for errors
+   - [ ] Fix issues locally
+   - [ ] Redeploy
 
-```bash
-cd backend
-git revert HEAD
-git push
-```
+2. **Dashboard**
+   - [ ] Revert to previous deployment
+   - [ ] Check build logs
+   - [ ] Fix issues locally
+   - [ ] Redeploy
 
-### Dashboard Rollback
+3. **Agent**
+   - [ ] Provide previous version download
+   - [ ] Document known issues
+   - [ ] Fix and release patch
 
-```bash
-cd dashboard
-git revert HEAD
-git push
-```
+## Support Plan
 
-### Agent Rollback
+- [ ] Create support email/channel
+- [ ] Set up issue tracker (GitHub Issues)
+- [ ] Create community forum/Discord
+- [ ] Document common issues
+- [ ] Provide example configurations
 
-```bash
-# On each machine:
-cd agent
-git pull origin main~1
-node agent.js start
-```
+## Maintenance
 
----
+### Regular Tasks
 
-## Monitoring
-
-### What to Monitor
-
-- [ ] Backend uptime
-- [ ] WebSocket connection count
-- [ ] Error rates
-- [ ] Response times
-- [ ] Memory usage
-- [ ] CPU usage
-
-### Tools
-
-- Render/Railway dashboard
-- Vercel analytics
-- Browser DevTools
-- Custom logging
-
----
-
-## User Communication
-
-### Announcement Template
-
-```
-🎉 Vortix Update - New Features!
-
-We're excited to announce major new features:
-
-✨ Dark/Light Theme Toggle
-🖥️ Multi-Device Command Execution
-📁 File Transfer System
-📊 Real-Time System Monitoring Widgets
-✅ Enhanced Auto-Start
-
-What's New:
-- Switch between dark and light themes
-- Execute commands on multiple devices at once
-- Upload and download files easily
-- Monitor CPU, RAM, and disk usage in real-time
-- View recent commands and device status
-
-How to Update:
-1. Refresh your dashboard
-2. Update your agents (if needed)
-3. Enjoy the new features!
-
-Need Help?
-- Check the updated documentation
-- Contact support: vaibhavrajpoot2626@gmail.com
-
-Happy controlling! 🚀
-```
-
----
-
-## Post-Launch Tasks
-
-### Week 1
-
-- [ ] Monitor for bugs
-- [ ] Respond to user feedback
-- [ ] Fix critical issues
-- [ ] Update documentation based on questions
-
-### Week 2-4
-
-- [ ] Analyze usage patterns
+- [ ] Update dependencies monthly
+- [ ] Review security advisories
+- [ ] Monitor error logs
 - [ ] Optimize performance
-- [ ] Add requested features
-- [ ] Improve documentation
+- [ ] Update documentation
+
+### Backup Strategy
+
+- [ ] Database backups (if applicable)
+- [ ] Configuration backups
+- [ ] Code repository backups
+- [ ] User data backups (if applicable)
+
+## Success Criteria
+
+- [ ] 99% uptime
+- [ ] < 2s page load time
+- [ ] < 100ms WebSocket latency
+- [ ] Zero security vulnerabilities
+- [ ] Positive user feedback
+
+## Launch
+
+- [ ] Announce on social media
+- [ ] Post on Product Hunt
+- [ ] Share on Reddit/HackerNews
+- [ ] Update portfolio/website
+- [ ] Create demo video
+- [ ] Write blog post
 
 ---
 
-## Success Metrics
+**Deployment Date:** ******\_******
 
-### Technical Metrics
+**Deployed By:** ******\_******
 
-- Uptime: > 99%
-- Response time: < 500ms
-- Error rate: < 1%
-- WebSocket stability: > 95%
+**Production URLs:**
 
-### User Metrics
+- Backend: ******\_******
+- Dashboard: ******\_******
 
-- Feature adoption rate
-- User satisfaction
-- Bug reports
-- Feature requests
+**Notes:**
 
 ---
 
-## Emergency Contacts
-
-- **Backend Issues**: Check Render/Railway logs
-- **Dashboard Issues**: Check Vercel logs
-- **Agent Issues**: Check local logs
-- **Support**: vaibhavrajpoot2626@gmail.com
-
 ---
 
-## Final Checklist
-
-Before going live:
-
-- [ ] All tests pass
-- [ ] Documentation complete
-- [ ] Backups created
-- [ ] Rollback plan ready
-- [ ] Monitoring set up
-- [ ] Team notified
-- [ ] Users notified
-- [ ] Support ready
-
 ---
-
-## 🎉 Launch!
-
-When everything is checked:
-
-1. Deploy backend
-2. Deploy dashboard
-3. Update agents
-4. Announce to users
-5. Monitor closely
-6. Celebrate! 🎊
-
----
-
-**Good luck with your deployment!** 🚀

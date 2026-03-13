@@ -411,17 +411,21 @@ wss.on("connection", (ws, req) => {
 
       // File transfer - Browse files
       if (data.type === "BROWSE_FILES") {
+        console.log("Backend: Received BROWSE_FILES request for", data.deviceName, "path:", data.path);
         const deviceId = `device-${data.deviceName.toLowerCase()}`;
 
         if (!ws.authenticatedDevices.has(deviceId)) {
+          console.log("Backend: Not authenticated for device:", data.deviceName);
           return;
         }
 
         const targetDevice = devices.get(deviceId);
         if (!targetDevice || targetDevice.status !== "online") {
+          console.log("Backend: Device not found or offline:", data.deviceName);
           return;
         }
 
+        console.log("Backend: Forwarding BROWSE_FILES to agent");
         targetDevice.ws.send(JSON.stringify({
           type: "BROWSE_FILES",
           path: data.path
@@ -627,9 +631,11 @@ wss.on("connection", (ws, req) => {
 
     // Forward file list to authenticated dashboards
     if (data.type === "FILE_LIST") {
+      console.log("Backend: Received FILE_LIST from agent", device.deviceName, "with", data.files?.length, "files");
       dashboardClients.forEach((dashboardWs) => {
         const deviceId = `device-${device.deviceName.toLowerCase()}`;
         if (dashboardWs.authenticatedDevices.has(deviceId)) {
+          console.log("Backend: Forwarding FILE_LIST to dashboard for", device.deviceName);
           dashboardWs.send(JSON.stringify({
             type: "FILE_LIST",
             deviceName: device.deviceName,
