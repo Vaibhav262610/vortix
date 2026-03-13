@@ -123,7 +123,7 @@ function startAgent() {
   // Backend URL - supports both local and production
   // For production: set BACKEND_URL environment variable
   // For local: defaults to ws://localhost:8080
-  const BACKEND_URL = process.env.BACKEND_URL || 'ws://localhost:8080';
+  const BACKEND_URL = process.env.BACKEND_URL || 'wss://vortix.onrender.com';
   console.log(`Backend URL: ${BACKEND_URL}`);
 
   let ws = null;
@@ -167,8 +167,9 @@ function startAgent() {
       }, 5000);
     });
 
-    ws.on("close", () => {
+    ws.on("close", (code, reason) => {
       console.log("Disconnected from backend");
+      console.log(`Close code: ${code}, Reason: ${reason || 'No reason provided'}`);
 
       // Clean up screen capture
       if (screenCaptureInterval) {
