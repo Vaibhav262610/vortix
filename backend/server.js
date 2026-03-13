@@ -1,4 +1,5 @@
 const WebSocket = require("ws");
+const http = require("http");
 const readline = require("readline");
 const axios = require("axios");
 const os = require("os");
@@ -18,9 +19,28 @@ function hashPassword(password) {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
-const wss = new WebSocket.Server({ port: PORT });
+// Create HTTP server for health checks and WebSocket upgrade
+const server = http.createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: 'ok',
+      devices: devices.size,
+      dashboards: dashboardClients.size,
+      uptime: process.uptime()
+    }));
+  } else {
+    res.writeHead(404);
+    res.end('Not Found');
+  }
+});
 
-console.log(`Backend running on port ${PORT}`);
+const wss = new WebSocket.Server({ server });
+
+server.listen(PORT, () => {
+  console.log(`Backend running on port ${PORT}`);
+  console.log(`Health check: http://localhost:${PORT}/health`);
+});
 
 function waitForExecuteResult(deviceName, command, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {

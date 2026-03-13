@@ -586,7 +586,6 @@ export default function Home() {
 					console.log("✅ Dashboard connected to backend successfully!");
 					console.log("Connected to:", backendWS);
 					setLogs((prev) => [...prev, "[SYSTEM] Connected to backend"]);
-					setWs(ws);
 
 					// Send heartbeat every 30 seconds to keep connection alive
 					const heartbeatInterval = setInterval(() => {
