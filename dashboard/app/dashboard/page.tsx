@@ -467,6 +467,7 @@ export default function Home() {
 	// New feature states
 	const [showFileTransfer, setShowFileTransfer] = useState(false);
 	const [showMultiDevice, setShowMultiDevice] = useState(false);
+	const [showWidgetsSidebar, setShowWidgetsSidebar] = useState(false);
 	const [commandHistory, setCommandHistory] = useState<string[]>([]);
 	const [fileListData, setFileListData] = useState<{
 		files: any[];
@@ -1385,7 +1386,7 @@ export default function Home() {
 					</div>
 				</header>
 
-				<div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+				<div className="grid gap-6 lg:grid-cols-[280px_1fr] lg:mr-80">
 					{/* Devices — glass panel */}
 					<div className="glass rounded-2xl p-5 sm:p-6 h-fit">
 						{devices.length === 0 ? (
@@ -2026,8 +2027,27 @@ export default function Home() {
 				/>
 			)}
 
-			{/* Widgets Sidebar - Fixed Right */}
-			<div className="fixed right-0 top-20 bottom-0 w-80 backdrop-blur-xl border-l p-4 space-y-4 overflow-y-auto z-20 bg-black/40 border-white/10">
+			{/* Widgets Sidebar - Fixed Right (Hidden on mobile, toggle on desktop) */}
+			<div
+				className={`fixed right-0 top-20 bottom-0 w-80 backdrop-blur-xl border-l p-4 space-y-4 overflow-y-auto z-20 bg-black/40 border-white/10 transition-transform duration-300 ${
+					showWidgetsSidebar ? "translate-x-0" : "translate-x-full"
+				} lg:translate-x-0`}>
+				<button
+					onClick={() => setShowWidgetsSidebar(false)}
+					className="lg:hidden absolute top-4 right-4 h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition">
+					<svg
+						className="w-5 h-5 text-white"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24">
+						<path
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							strokeWidth={2}
+							d="M6 18L18 6M6 6l12 12"
+						/>
+					</svg>
+				</button>
 				<SystemStatsWidget
 					key={wsConnected ? "connected" : "disconnected"}
 					deviceName={selectedDevice}
@@ -2048,6 +2068,24 @@ export default function Home() {
 					}}
 				/>
 			</div>
+
+			{/* Mobile Widgets Toggle Button */}
+			<button
+				onClick={() => setShowWidgetsSidebar(true)}
+				className="lg:hidden fixed bottom-24 right-4 h-14 w-14 rounded-full bg-blue-600 hover:bg-blue-700 shadow-lg flex items-center justify-center transition z-30">
+				<svg
+					className="w-6 h-6 text-white"
+					fill="none"
+					stroke="currentColor"
+					viewBox="0 0 24 24">
+					<path
+						strokeLinecap="round"
+						strokeLinejoin="round"
+						strokeWidth={2}
+						d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+					/>
+				</svg>
+			</button>
 
 			{/* Feature Buttons - Fixed Bottom Left */}
 			<div className="fixed bottom-6 left-6 flex gap-3 z-30">

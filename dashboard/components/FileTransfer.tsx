@@ -354,14 +354,14 @@ export function FileTransfer({
 									{file.type === "file" && (
 										<button
 											onClick={() => handleFileDownload(file)}
-											className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-xs text-emerald-400 transition opacity-0 group-hover:opacity-100">
+											className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-xs text-emerald-400 transition opacity-100 md:opacity-0 md:group-hover:opacity-100">
 											Download
 										</button>
 									)}
 									{file.type === "directory" && (
 										<button
 											onClick={() => browseFiles(file.path)}
-											className="px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/50 text-xs text-blue-400 transition opacity-0 group-hover:opacity-100">
+											className="px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/50 text-xs text-blue-400 transition opacity-100 md:opacity-0 md:group-hover:opacity-100">
 											Open
 										</button>
 									)}
