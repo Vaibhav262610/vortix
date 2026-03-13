@@ -232,7 +232,7 @@ wss.on("connection", (ws, req) => {
 
           const plan = await generatePlan(
             data.command,
-            targetDevice.platform || "win32",
+            targetDevice.platform && targetDevice.platform !== "unknown" ? targetDevice.platform : "win32",
             userApiKey
           );
 

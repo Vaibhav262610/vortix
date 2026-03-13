@@ -145,6 +145,15 @@ function startAgent() {
         reconnectTimeout = null;
       }
 
+      // Send platform info immediately on connection
+      ws.send(
+        JSON.stringify({
+          type: "HEARTBEAT",
+          platform: PLATFORM
+        })
+      );
+
+      // Then send heartbeat every 5 seconds
       setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           console.log("Sending heartbeat...");
