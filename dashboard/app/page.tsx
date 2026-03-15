@@ -93,9 +93,31 @@ function Nav() {
 		return () => window.removeEventListener("scroll", handleScroll);
 	}, []);
 
+	const menuVariants = {
+		closed: {
+			opacity: 0,
+			height: 0,
+		},
+		open: {
+			opacity: 1,
+			height: "auto" as const,
+		},
+	};
+
+	const itemVariants = {
+		closed: {
+			opacity: 0,
+			y: -20,
+		},
+		open: {
+			opacity: 1,
+			y: 0,
+		},
+	};
+
 	return (
 		<nav
-			className={`fixed top-0 left-0 right-0 z-50 transition-all ${
+			className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
 				scrolled
 					? "bg-black/20 backdrop-blur-sm border-b border-white/[0.06]"
 					: ""
@@ -125,61 +147,92 @@ function Nav() {
 					</Link>
 				</div>
 
-				<button
+				<motion.button
 					onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-					className="md:hidden p-2 hover:bg-white/5 rounded-lg transition">
-					<svg
+					className="md:hidden p-2 hover:bg-white/5 rounded-lg transition-colors duration-200"
+					whileTap={{ scale: 0.95 }}
+					animate={{ rotate: mobileMenuOpen ? 180 : 0 }}
+					transition={{ duration: 0.3 }}>
+					<motion.svg
 						className="w-6 h-6"
 						fill="none"
 						stroke="currentColor"
-						viewBox="0 0 24 24">
-						{mobileMenuOpen ? (
-							<path
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								strokeWidth={2}
-								d="M6 18L18 6M6 6l12 12"
-							/>
-						) : (
-							<path
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								strokeWidth={2}
-								d="M4 6h16M4 12h16M4 18h16"
-							/>
-						)}
-					</svg>
-				</button>
+						viewBox="0 0 24 24"
+						animate={mobileMenuOpen ? "open" : "closed"}>
+						<motion.path
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							strokeWidth={2}
+							variants={{
+								closed: { d: "M4 6h16M4 12h16M4 18h16" },
+								open: { d: "M6 18L18 6M6 6l12 12" },
+							}}
+							transition={{ duration: 0.3 }}
+						/>
+					</motion.svg>
+				</motion.button>
 			</div>
 
-			{mobileMenuOpen && (
-				<motion.div
-					initial={{ opacity: 0, height: 0 }}
-					animate={{ opacity: 1, height: "auto" }}
-					exit={{ opacity: 0, height: 0 }}
-					className="md:hidden glass border-t border-white/[0.06] bg-black/40 backdrop-blur-xl">
-					<div className="px-6 py-6 space-y-3">
+			<motion.div
+				initial="closed"
+				animate={mobileMenuOpen ? "open" : "closed"}
+				variants={menuVariants}
+				transition={{
+					duration: 0.4,
+					ease: "easeOut",
+					when: "beforeChildren",
+					staggerChildren: 0.1,
+				}}
+				className="md:hidden overflow-hidden glass border-t border-white/[0.06] bg-black/40 backdrop-blur-xl">
+				<motion.div className="px-6 py-6 space-y-2">
+					<motion.div variants={itemVariants}>
 						<Link
 							href="/setup"
 							onClick={() => setMobileMenuOpen(false)}
-							className="block text-sm tracking-[0.2em] text-white/70 hover:text-white py-3 px-4 rounded-lg hover:bg-white/5 transition">
-							SETUP GUIDE
+							className="block text-sm tracking-[0.2em] text-white/70 hover:text-white py-4 px-4 rounded-lg hover:bg-white/5 transition-all duration-200 border border-transparent hover:border-white/10">
+							<div className="flex items-center justify-between">
+								<span>SETUP GUIDE</span>
+								<motion.span
+									className="text-emerald-400 opacity-0"
+									whileHover={{ opacity: 1, x: 5 }}
+									transition={{ duration: 0.2 }}>
+									→
+								</motion.span>
+							</div>
 						</Link>
+					</motion.div>
+
+					<motion.div variants={itemVariants}>
 						<Link
 							href="/contact"
 							onClick={() => setMobileMenuOpen(false)}
-							className="block text-sm tracking-[0.2em] text-white/70 hover:text-white py-3 px-4 rounded-lg hover:bg-white/5 transition">
-							CONTACT
+							className="block text-sm tracking-[0.2em] text-white/70 hover:text-white py-4 px-4 rounded-lg hover:bg-white/5 transition-all duration-200 border border-transparent hover:border-white/10">
+							<div className="flex items-center justify-between">
+								<span>CONTACT</span>
+								<motion.span
+									className="text-emerald-400 opacity-0"
+									whileHover={{ opacity: 1, x: 5 }}
+									transition={{ duration: 0.2 }}>
+									→
+								</motion.span>
+							</div>
 						</Link>
+					</motion.div>
+
+					<motion.div variants={itemVariants}>
 						<Link
 							href="/dashboard"
 							onClick={() => setMobileMenuOpen(false)}
-							className="block px-6 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm tracking-[0.2em] text-center text-white transition mt-2">
-							DASHBOARD
+							className="block px-6 py-4 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm tracking-[0.2em] text-center text-white transition-all duration-200 mt-4 shadow-lg hover:shadow-emerald-500/25">
+							<motion.span
+								whileHover={{ scale: 1.05 }}
+								transition={{ duration: 0.2 }}>
+								DASHBOARD
+							</motion.span>
 						</Link>
-					</div>
+					</motion.div>
 				</motion.div>
-			)}
+			</motion.div>
 		</nav>
 	);
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, JSX } from "react";
+import { motion } from "framer-motion";
 import { quickCommands } from "../../quickCommands";
 import { SystemStatsWidget } from "../../components/SystemStatsWidget";
 import { RecentCommandsWidget } from "../../components/RecentCommandsWidget";
@@ -468,6 +469,7 @@ export default function Home() {
 	const [showFileTransfer, setShowFileTransfer] = useState(false);
 	const [showMultiDevice, setShowMultiDevice] = useState(false);
 	const [showWidgetsSidebar, setShowWidgetsSidebar] = useState(false);
+	const [showMobileMenu, setShowMobileMenu] = useState(false);
 	const [commandHistory, setCommandHistory] = useState<string[]>([]);
 	const [fileListData, setFileListData] = useState<{
 		files: any[];
@@ -922,35 +924,289 @@ export default function Home() {
 
 	return (
 		<div className="min-h-screen bg-[#0d0d0f] text-white">
-			{/* Header */}
-			<div className="border-b backdrop-blur-sm sticky top-0 z-30 border-white/10 bg-black/20">
-				<div className="container mx-auto px-4 py-4 flex items-center justify-between">
-					<div className="flex items-center gap-4">
-						<a
-							href="/"
-							className="flex items-center gap-2 hover:opacity-80 transition">
-							<div>
-								<h1 className="text-2xl font-bold text-white">Vortix</h1>
-								<p className="text-xs text-white/50">Remote OS Control</p>
-							</div>
-						</a>
+			{/* Top Navigation Bar */}
+			<nav className="fixed top-0 left-0 right-0 z-50  bg-black/20 backdrop-blur-sm border-b border-white/[0.06]">
+				<div className="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+					<div className="text-sm tracking-[0.2em] font-medium">
+						VORTIX DASHBOARD
 					</div>
-					<div className="flex items-center gap-3">
+
+					{/* Desktop Navigation */}
+					<div className="hidden md:flex items-center gap-4">
 						<a
 							href="/setup"
-							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
+							className="px-6 py-3 bg-white/10 hover:bg-white/15 border border-white/20 rounded-2xl text-sm tracking-[0.1em] text-white/90 hover:text-white transition-all duration-200">
 							Setup Guide
 						</a>
 						<a
 							href="/settings"
-							className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
+							className="px-6 py-3 bg-white/10 hover:bg-white/15 border border-white/20 rounded-2xl text-sm tracking-[0.1em] text-white/90 hover:text-white transition-all duration-200">
 							Settings
 						</a>
 						<a
 							href="/contact"
-							className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 rounded-lg text-white transition">
+							className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-2xl text-sm tracking-[0.1em] text-white transition-all duration-200 shadow-lg">
 							Contact
 						</a>
+						<button
+							onClick={() => setShowWidgetsSidebar(!showWidgetsSidebar)}
+							className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs tracking-[0.2em] transition lg:hidden">
+							STATS
+						</button>
+					</div>
+
+					{/* Mobile Menu Button */}
+					<motion.button
+						onClick={() => setShowMobileMenu(!showMobileMenu)}
+						className="md:hidden p-2 hover:bg-white/5 rounded-lg transition-colors duration-200"
+						whileTap={{ scale: 0.95 }}
+						animate={{ rotate: showMobileMenu ? 180 : 0 }}
+						transition={{ duration: 0.3 }}>
+						<motion.svg
+							className="w-6 h-6"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+							animate={showMobileMenu ? "open" : "closed"}>
+							<motion.path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								strokeWidth={2}
+								variants={{
+									closed: { d: "M4 6h16M4 12h16M4 18h16" },
+									open: { d: "M6 18L18 6M6 6l12 12" },
+								}}
+								transition={{ duration: 0.3 }}
+							/>
+						</motion.svg>
+					</motion.button>
+				</div>
+
+				{/* Mobile Menu Dropdown */}
+				<motion.div
+					initial="closed"
+					animate={showMobileMenu ? "open" : "closed"}
+					variants={{
+						closed: {
+							opacity: 0,
+							height: 0,
+							transition: {
+								duration: 0.3,
+								ease: [0.4, 0.0, 0.2, 1],
+								when: "afterChildren",
+							},
+						},
+						open: {
+							opacity: 1,
+							height: "auto",
+							transition: {
+								duration: 0.4,
+								ease: [0.0, 0.0, 0.2, 1],
+								when: "beforeChildren",
+								staggerChildren: 0.1,
+							},
+						},
+					}}
+					className="md:hidden overflow-hidden bg-black/40 backdrop-blur-xl border-t border-white/[0.06]">
+					<motion.div className="px-6 py-6 space-y-2">
+						<motion.div
+							variants={{
+								closed: { opacity: 0, y: -20 },
+								open: { opacity: 1, y: 0 },
+							}}
+							transition={{ duration: 0.3, ease: [0.0, 0.0, 0.2, 1] }}>
+							<a
+								href="/setup"
+								onClick={() => setShowMobileMenu(false)}
+								className="block text-sm tracking-[0.2em] text-white/70 hover:text-white py-4 px-4 rounded-lg hover:bg-white/5 transition-all duration-200 border border-transparent hover:border-white/10">
+								<div className="flex items-center justify-between">
+									<span>SETUP GUIDE</span>
+									<motion.span
+										className="text-emerald-400 opacity-0"
+										whileHover={{ opacity: 1, x: 5 }}
+										transition={{ duration: 0.2 }}>
+										→
+									</motion.span>
+								</div>
+							</a>
+						</motion.div>
+
+						<motion.div
+							variants={{
+								closed: { opacity: 0, y: -20 },
+								open: { opacity: 1, y: 0 },
+							}}
+							transition={{ duration: 0.3, ease: [0.0, 0.0, 0.2, 1] }}>
+							<a
+								href="/contact"
+								onClick={() => setShowMobileMenu(false)}
+								className="block text-sm tracking-[0.2em] text-white/70 hover:text-white py-4 px-4 rounded-lg hover:bg-white/5 transition-all duration-200 border border-transparent hover:border-white/10">
+								<div className="flex items-center justify-between">
+									<span>CONTACT</span>
+									<motion.span
+										className="text-emerald-400 opacity-0"
+										whileHover={{ opacity: 1, x: 5 }}
+										transition={{ duration: 0.2 }}>
+										→
+									</motion.span>
+								</div>
+							</a>
+						</motion.div>
+
+						<motion.div
+							variants={{
+								closed: { opacity: 0, y: -20 },
+								open: { opacity: 1, y: 0 },
+							}}
+							transition={{ duration: 0.3, ease: [0.0, 0.0, 0.2, 1] }}>
+							<a
+								href="/settings"
+								onClick={() => setShowMobileMenu(false)}
+								className="block text-sm tracking-[0.2em] text-white/70 hover:text-white py-4 px-4 rounded-lg hover:bg-white/5 transition-all duration-200 border border-transparent hover:border-white/10">
+								<div className="flex items-center justify-between">
+									<span>SETTINGS</span>
+									<motion.span
+										className="text-emerald-400 opacity-0"
+										whileHover={{ opacity: 1, x: 5 }}
+										transition={{ duration: 0.2 }}>
+										→
+									</motion.span>
+								</div>
+							</a>
+						</motion.div>
+
+						<motion.div
+							variants={{
+								closed: { opacity: 0, y: -20 },
+								open: { opacity: 1, y: 0 },
+							}}
+							transition={{ duration: 0.3, ease: [0.0, 0.0, 0.2, 1] }}>
+							<button
+								onClick={() => {
+									setShowWidgetsSidebar(true);
+									setShowMobileMenu(false);
+								}}
+								className="w-full text-left text-sm tracking-[0.2em] text-white/70 hover:text-white py-4 px-4 rounded-lg hover:bg-white/5 transition-all duration-200 border border-transparent hover:border-white/10">
+								<div className="flex items-center justify-between">
+									<span>SYSTEM STATS</span>
+									<motion.span
+										className="text-emerald-400 opacity-0"
+										whileHover={{ opacity: 1, x: 5 }}
+										transition={{ duration: 0.2 }}>
+										→
+									</motion.span>
+								</div>
+							</button>
+						</motion.div>
+
+						<motion.div
+							variants={{
+								closed: { opacity: 0, y: -20 },
+								open: { opacity: 1, y: 0 },
+							}}
+							transition={{ duration: 0.3, ease: [0.0, 0.0, 0.2, 1] }}>
+							<button
+								onClick={() => {
+									setShowFileTransfer(true);
+									setShowMobileMenu(false);
+								}}
+								className="w-full text-left text-sm tracking-[0.2em] text-white/70 hover:text-white py-4 px-4 rounded-lg hover:bg-white/5 transition-all duration-200 border border-transparent hover:border-white/10">
+								<div className="flex items-center justify-between">
+									<span>FILE TRANSFER</span>
+									<motion.span
+										className="text-emerald-400 opacity-0"
+										whileHover={{ opacity: 1, x: 5 }}
+										transition={{ duration: 0.2 }}>
+										→
+									</motion.span>
+								</div>
+							</button>
+						</motion.div>
+
+						<motion.div
+							variants={{
+								closed: { opacity: 0, y: -20 },
+								open: { opacity: 1, y: 0 },
+							}}
+							transition={{ duration: 0.3, ease: [0.0, 0.0, 0.2, 1] }}>
+							<button
+								onClick={() => {
+									setShowMultiDevice(true);
+									setShowMobileMenu(false);
+								}}
+								className="w-full text-left px-6 py-4 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm tracking-[0.2em] text-center text-white transition-all duration-200 mt-4 shadow-lg hover:shadow-emerald-500/25">
+								<motion.span
+									whileHover={{ scale: 1.05 }}
+									transition={{ duration: 0.2 }}>
+									MULTI-DEVICE
+								</motion.span>
+							</button>
+						</motion.div>
+					</motion.div>
+				</motion.div>
+			</nav>
+
+			{/* Main Content - Add top padding for fixed nav */}
+			<div className="pt-20">
+				{/* Mobile Command Input - Top positioned below navbar */}
+				<div className="md:hidden px-3 py-4 bg-black/20 backdrop-blur-sm border-b border-white/[0.06]">
+					<div className="glass rounded-xl p-4">
+						<div className="flex items-center justify-between mb-3">
+							<p className="text-xs font-medium uppercase tracking-widest text-white/45">
+								Send Command
+							</p>
+							{selectedDevice && (
+								<div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-emerald-600/10 border border-emerald-600/30">
+									<div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+									<span className="text-xs text-emerald-400 font-medium">
+										{selectedDevice}
+									</span>
+								</div>
+							)}
+						</div>
+						<div className="flex flex-col gap-3">
+							<input
+								value={command}
+								onChange={(e) => setCommand(e.target.value)}
+								onKeyDown={(e) => e.key === "Enter" && sendCommand()}
+								placeholder={
+									selectedDevice
+										? "Type a command or describe what you want to do..."
+										: "Select a device first..."
+								}
+								disabled={!selectedDevice}
+								className={`w-full rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 border border-white/10 bg-black/40 ${
+									!selectedDevice ? "opacity-50 cursor-not-allowed" : ""
+								}`}
+							/>
+							<button
+								type="button"
+								onClick={sendCommand}
+								disabled={isExecuting || isPlanning || !selectedDevice}
+								className={`w-full rounded-xl px-6 py-3 text-sm font-medium transition focus:outline-none focus:ring-2 ${
+									isExecuting || isPlanning
+										? "cursor-not-allowed bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+										: !selectedDevice
+											? "cursor-not-allowed bg-white/5 text-white/40 border border-white/10"
+											: "bg-emerald-600 hover:bg-emerald-700 text-white"
+								}`}>
+								{isExecuting
+									? "Executing..."
+									: isPlanning
+										? "Planning..."
+										: "Send Command"}
+							</button>
+						</div>
+						{!selectedDevice && (
+							<p className="mt-3 text-xs text-orange-400/70">
+								Please select a device first
+							</p>
+						)}
+						{selectedDevice && (
+							<p className="mt-3 text-xs text-white/40">
+								💡 Tip: Press Enter to send, or use Quick Commands
+							</p>
+						)}
 					</div>
 				</div>
 			</div>
@@ -1357,16 +1613,40 @@ export default function Home() {
 				}}
 			/>
 
-			<div className="mx-auto max-w-5xl px-5 py-8 sm:px-6 sm:py-10">
+			<div className="mx-auto max-w-[1400px] px-5 py-8 sm:px-6 sm:py-10">
 				{/* Header */}
-				<header className="mb-8 flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-6">
-					<div>
-						<h1 className="text-xl font-semibold tracking-tight text-white/95 sm:text-2xl">
-							Vortix Dashboard
-						</h1>
-						<p className="text-sm text-white/50 mt-1">
-							Manage and control your connected devices
-						</p>
+				{/* <header className="mb-8 flex items-baseline justify-between gap-4 border-b border-white/[0.06] pb-6">
+					<div className="flex items-center gap-4">
+						<div className="flex items-center gap-3">
+							<div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/25">
+								<svg
+									className="w-6 h-6 text-white"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24">
+									<path
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										strokeWidth={2}
+										d="M13 10V3L4 14h7v7l9-11h-7z"
+									/>
+								</svg>
+							</div>
+							<div>
+								<h1 className="text-xl font-semibold tracking-tight text-white/95 sm:text-2xl flex items-center gap-2">
+									Command Center
+									<span className="inline-flex items-center px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+										<span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse mr-1.5"></span>
+										<span className="text-xs text-emerald-400 font-medium">
+											LIVE
+										</span>
+									</span>
+								</h1>
+								<p className="text-sm text-white/50 mt-1">
+									Remote control at your fingertips
+								</p>
+							</div>
+						</div>
 					</div>
 					<div className="flex items-center gap-2">
 						{devices.filter((d) => d.status === "online").length > 0 && (
@@ -1384,9 +1664,9 @@ export default function Home() {
 							</div>
 						)}
 					</div>
-				</header>
+				</header> */}
 
-				<div className="grid gap-6 lg:grid-cols-[280px_1fr] lg:mr-80">
+				<div className="grid gap-6 lg:grid-cols-[320px_1fr] lg:mr-80">
 					{/* Devices — glass panel */}
 					<div className="glass rounded-2xl p-5 sm:p-6 h-fit">
 						{devices.length === 0 ? (
@@ -1868,7 +2148,7 @@ export default function Home() {
 					{/* Main: command + logs */}
 					<div className="flex flex-col gap-6">
 						{/* Command — glass bar */}
-						<div className="glass rounded-2xl p-5 sm:p-6">
+						<div className="hidden md:block glass rounded-2xl p-5 sm:p-6">
 							<div className="flex items-center justify-between mb-3">
 								<p className="text-xs font-medium uppercase tracking-widest text-white/45">
 									Send Command
@@ -1902,25 +2182,27 @@ export default function Home() {
 								</div>
 							</div>
 							<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-								<input
-									value={command}
-									onChange={(e) => setCommand(e.target.value)}
-									onKeyDown={(e) => e.key === "Enter" && sendCommand()}
-									placeholder={
-										selectedDevice
-											? "Type a command or describe what you want to do..."
-											: "Select a device first..."
-									}
-									disabled={!selectedDevice}
-									className={`glass-input flex-1 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 border border-white/10 ${
-										!selectedDevice ? "opacity-50 cursor-not-allowed" : ""
-									}`}
-								/>
+								<div className="flex-1 min-w-0">
+									<input
+										value={command}
+										onChange={(e) => setCommand(e.target.value)}
+										onKeyDown={(e) => e.key === "Enter" && sendCommand()}
+										placeholder={
+											selectedDevice
+												? "Type a command or describe what you want to do..."
+												: "Select a device first..."
+										}
+										disabled={!selectedDevice}
+										className={`w-full rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 border border-white/10 bg-black/40 ${
+											!selectedDevice ? "opacity-50 cursor-not-allowed" : ""
+										}`}
+									/>
+								</div>
 								<button
 									type="button"
 									onClick={sendCommand}
 									disabled={isExecuting || isPlanning || !selectedDevice}
-									className={`rounded-xl px-6 py-3 text-sm font-medium transition focus:outline-none focus:ring-2 sm:shrink-0 ${
+									className={`rounded-xl px-6 py-3 text-sm font-medium transition focus:outline-none focus:ring-2 sm:shrink-0 whitespace-nowrap ${
 										isExecuting || isPlanning
 											? "cursor-not-allowed bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
 											: !selectedDevice
