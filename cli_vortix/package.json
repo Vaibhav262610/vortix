@@ -1,7 +1,7 @@
 {
   "name": "vortix",
-  "version": "1.1.0",
-  "description": "AI-powered OS control system with remote command execution",
+  "version": "1.2.0",
+  "description": "AI-powered remote OS control system with natural language commands, real-time monitoring, and modern web dashboard",
   "main": "index.js",
   "bin": {
     "vortix": "./bin/vortix.js"
@@ -20,12 +20,22 @@
     "websocket",
     "command-execution",
     "screen-sharing",
+    "file-transfer",
+    "multi-device",
+    "real-time-monitoring",
+    "system-stats",
+    "natural-language",
+    "dashboard",
+    "mobile-support",
+    "cloud-backend",
     "multi-platform",
     "windows",
     "macos",
     "linux",
     "typescript",
-    "nextjs"
+    "nextjs",
+    "react",
+    "framer-motion"
   ],
   "author": "Vaibhav Rajpoot <vaibhavrajpoot2626@gmail.com>",
   "license": "MIT",
@@ -46,7 +56,8 @@
     "agent/",
     "backend/",
     "scripts/",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "dependencies": {
     "axios": "^1.6.0",

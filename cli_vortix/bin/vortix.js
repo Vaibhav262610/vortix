@@ -56,8 +56,10 @@ function showHelp() {
     console.log('     vortix enable-autostart   Enable auto-start on system boot');
     console.log('     vortix disable-autostart  Disable auto-start');
     console.log('     vortix status             Check agent and auto-start status');
-    console.log('     vortix backend            Start backend server (dev only)');
     console.log('     vortix help               Show this help message');
+    console.log('');
+    console.log('  ☁️  Cloud Backend:');
+    console.log('     Backend runs automatically in the cloud - no setup required!');
     console.log('');
     console.log('  📖 Documentation:');
     console.log('     https://github.com/Vaibhav262610/vortix');
@@ -133,7 +135,17 @@ switch (command) {
         break;
 
     case 'backend':
-        runBackend();
+        console.log('');
+        console.log('🚀 Backend is now cloud-hosted!');
+        console.log('');
+        console.log('The Vortix backend runs automatically in the cloud.');
+        console.log('No need to start it manually - just use:');
+        console.log('');
+        console.log('  vortix login    # Set up your device');
+        console.log('  vortix start    # Start the agent');
+        console.log('');
+        console.log('Then visit: https://vortixai.vercel.app');
+        console.log('');
         break;
 
     default:
