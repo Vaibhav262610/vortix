@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1] - 2024-03-29
+
+### 📝 Documentation
+
+- **Improved README** - More professional documentation with reduced emojis
+- **Better Formatting** - Cleaner structure and more natural tone
+- **Enhanced Readability** - Less AI-generated appearance
+
 ## [1.2.0] - 2024-03-21
 
 ### 🎨 Major UI/UX Overhaul
