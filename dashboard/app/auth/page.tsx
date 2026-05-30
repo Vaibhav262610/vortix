@@ -1,75 +1,32 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { SignIn, SignUp, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 
 export default function AuthPage() {
-	const [isLogin, setIsLogin] = useState(true);
-	const [username, setUsername] = useState("");
-	const [password, setPassword] = useState("");
-	const [error, setError] = useState("");
-	const [loading, setLoading] = useState(false);
+	const [isSignUp, setIsSignUp] = useState(false);
+	const { isSignedIn, isLoaded } = useUser();
 	const router = useRouter();
 
 	useEffect(() => {
-		// Check if already logged in
-		const session = localStorage.getItem("vortix_session");
-		if (session) {
-			router.push("/");
+		if (isLoaded && isSignedIn) {
+			router.push("/dashboard");
 		}
-	}, [router]);
+	}, [isSignedIn, isLoaded, router]);
 
-	const handleSubmit = async (e: React.FormEvent) => {
-		e.preventDefault();
-		setError("");
-		setLoading(true);
-
-		try {
-			const backendWS =
-				process.env.NEXT_PUBLIC_BACKEND_WS || "wss://vortix.onrender.com";
-			const ws = new WebSocket(`${backendWS}?type=dashboard`);
-
-			ws.onopen = () => {
-				ws.send(
-					JSON.stringify({
-						type: isLogin ? "LOGIN" : "REGISTER",
-						username,
-						password,
-					}),
-				);
-			};
-
-			ws.onmessage = (event) => {
-				const data = JSON.parse(event.data);
-
-				if (data.type === "LOGIN_SUCCESS" || data.type === "REGISTER_SUCCESS") {
-					localStorage.setItem("vortix_session", data.sessionToken);
-					localStorage.setItem("vortix_username", data.username);
-					ws.close();
-					router.push("/");
-				} else if (
-					data.type === "LOGIN_ERROR" ||
-					data.type === "REGISTER_ERROR"
-				) {
-					setError(data.error);
-					setLoading(false);
-					ws.close();
-				}
-			};
-
-			ws.onerror = () => {
-				setError("Connection error. Please try again.");
-				setLoading(false);
-			};
-		} catch (err) {
-			setError("An error occurred. Please try again.");
-			setLoading(false);
-		}
-	};
+	if (!isLoaded) {
+		return (
+			<div className="min-h-screen bg-[#0d0d0f] flex items-center justify-center">
+				<div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500"></div>
+			</div>
+		);
+	}
 
 	return (
-		<div className="min-h-screen bg-[#0d0d0f] text-white flex items-center justify-center">
-			{/* Background */}
+		<div className="min-h-screen bg-[#0d0d0f] text-white">
+			{/* Background effects */}
 			<div
 				className="fixed inset-0 -z-10"
 				style={{
@@ -84,105 +41,112 @@ export default function AuthPage() {
 				}}
 			/>
 
-			<div className="w-full max-w-md px-4">
-				{/* Logo */}
-				<div className="text-center mb-8">
-					<h1 className="text-4xl font-bold text-white mb-2">Vortix</h1>
-					<p className="text-white/60">Remote OS Control System</p>
+			{/* Navigation */}
+			<nav className="fixed top-0 left-0 right-0 z-50 bg-black/20 backdrop-blur-sm border-b border-white/[0.06]">
+				<div className="max-w-[1600px] mx-auto px-6 py-5 flex items-center justify-between">
+					<Link href="/" className="text-base tracking-[0.3em] font-medium">
+						VORTIX
+					</Link>
 				</div>
+			</nav>
 
-				{/* Auth Form */}
-				<div className="glass rounded-2xl border border-white/10 p-8">
-					<div className="flex gap-2 mb-6">
-						<button
-							onClick={() => setIsLogin(true)}
-							className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
-								isLogin
-									? "bg-emerald-600 text-white"
-									: "bg-white/5 text-white/60 hover:text-white"
-							}`}>
-							Login
-						</button>
-						<button
-							onClick={() => setIsLogin(false)}
-							className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
-								!isLogin
-									? "bg-emerald-600 text-white"
-									: "bg-white/5 text-white/60 hover:text-white"
-							}`}>
-							Register
-						</button>
+			{/* Main content */}
+			<div className="flex items-center justify-center min-h-screen px-4 pt-20">
+				<div className="w-full max-w-md">
+					{/* Header */}
+					<div className="text-center mb-8">
+						<h1 className="text-4xl font-light mb-4 tracking-tight">
+							{isSignUp ? "Create Account" : "Welcome Back"}
+						</h1>
+						<p className="text-white/60">
+							{isSignUp
+								? "Sign up to start controlling your devices"
+								: "Sign in to access your dashboard"}
+						</p>
 					</div>
 
-					<form onSubmit={handleSubmit} className="space-y-4">
-						<div>
-							<label className="block text-sm font-medium text-white/70 mb-2">
-								Username
-							</label>
-							<input
-								type="text"
-								value={username}
-								onChange={(e) => setUsername(e.target.value)}
-								required
-								className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition"
-								placeholder="Enter your username"
+					{/* Clerk Auth Component */}
+					<div className="flex justify-center">
+						{isSignUp ? (
+							<SignUp
+								appearance={{
+									elements: {
+										rootBox: "w-full",
+										card: "bg-transparent shadow-none",
+									},
+								}}
 							/>
-						</div>
-
-						<div>
-							<label className="block text-sm font-medium text-white/70 mb-2">
-								Password
-							</label>
-							<input
-								type="password"
-								value={password}
-								onChange={(e) => setPassword(e.target.value)}
-								required
-								className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition"
-								placeholder="Enter your password"
+						) : (
+							<SignIn
+								appearance={{
+									elements: {
+										rootBox: "w-full",
+										card: "bg-transparent shadow-none",
+									},
+								}}
 							/>
-						</div>
-
-						{error && (
-							<div className="p-3 rounded-lg bg-red-600/10 border border-red-600/30 text-red-300 text-sm">
-								{error}
-							</div>
 						)}
-
-						<button
-							type="submit"
-							disabled={loading}
-							className={`w-full px-6 py-3 rounded-xl font-medium transition ${
-								loading
-									? "bg-emerald-600/50 cursor-not-allowed"
-									: "bg-emerald-600 hover:bg-emerald-700"
-							} text-white`}>
-							{loading
-								? "Please wait..."
-								: isLogin
-									? "Login"
-									: "Create Account"}
-						</button>
-					</form>
-
-					<div className="mt-6 p-4 rounded-lg bg-blue-600/10 border border-blue-600/30">
-						<p className="text-sm text-blue-300 mb-2">
-							<span className="font-semibold">First time here?</span>
-						</p>
-						<p className="text-xs text-blue-200/80">
-							Create an account to get started. Your devices will be linked to
-							your account and only you can control them.
-						</p>
 					</div>
-				</div>
 
-				{/* Footer */}
-				<div className="text-center mt-6">
-					<a
-						href="/setup"
-						className="text-sm text-white/50 hover:text-white transition">
-						Need help? View Setup Guide
-					</a>
+					{/* Toggle between sign in and sign up */}
+					<div className="mt-6 text-center">
+						<button
+							onClick={() => setIsSignUp(!isSignUp)}
+							className="text-sm text-white/60 hover:text-white transition">
+							{isSignUp
+								? "Already have an account? Sign in"
+								: "Don't have an account? Sign up"}
+						</button>
+					</div>
+
+					{/* Features */}
+					<div className="mt-12 space-y-4">
+						<div className="flex items-center gap-3 text-sm text-white/60">
+							<svg
+								className="w-5 h-5 text-emerald-400"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24">
+								<path
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									strokeWidth={2}
+									d="M5 13l4 4L19 7"
+								/>
+							</svg>
+							<span>AI-powered command generation</span>
+						</div>
+						<div className="flex items-center gap-3 text-sm text-white/60">
+							<svg
+								className="w-5 h-5 text-emerald-400"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24">
+								<path
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									strokeWidth={2}
+									d="M5 13l4 4L19 7"
+								/>
+							</svg>
+							<span>Multi-device management</span>
+						</div>
+						<div className="flex items-center gap-3 text-sm text-white/60">
+							<svg
+								className="w-5 h-5 text-emerald-400"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24">
+								<path
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									strokeWidth={2}
+									d="M5 13l4 4L19 7"
+								/>
+							</svg>
+							<span>Real-time monitoring & control</span>
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>

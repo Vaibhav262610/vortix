@@ -141,7 +141,15 @@ Execute the same command across multiple connected devices simultaneously.
 - Report issues on [GitHub](https://github.com/Vaibhav262610/vortix/issues)
 - Contact support: vaibhavrajpoot2626@gmail.com
 
-## What's New in v1.2.1
+## What's New in v1.2.2
+
+- **Streamlined Dashboard** - Removed screen sharing and auto-start features for
+  cleaner UI
+- **Focus on Core Features** - Simplified interface focused on command execution
+  and monitoring
+- **Updated Components** - Latest agent and backend files included
+
+### Previous Updates (v1.2.1)
 
 - **Improved Documentation** - More professional README with better formatting
 - **Enhanced Readability** - Cleaner structure and natural tone

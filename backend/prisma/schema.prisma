@@ -1,0 +1,85 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model
+model User {
+  id            String    @id @default(cuid())
+  clerkId       String    @unique
+  email         String    @unique
+  username      String?
+  firstName     String?
+  lastName      String?
+  imageUrl      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  devices       Device[]
+  commands      CommandHistory[]
+  
+  @@map("users")
+}
+
+// Device model
+model Device {
+  id            String    @id @default(cuid())
+  deviceName    String
+  deviceId      String    @unique
+  passwordHash  String
+  platform      String    @default("unknown")
+  status        String    @default("offline")
+  lastSeen      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  commands      CommandHistory[]
+  
+  @@map("devices")
+}
+
+// Command History model
+model CommandHistory {
+  id            String    @id @default(cuid())
+  command       String
+  output        String?   @db.Text
+  exitCode      Int?
+  status        String    @default("pending") // pending, success, error
+  executedAt    DateTime  @default(now())
+  duration      Int?      // in milliseconds
+  
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  deviceId      String
+  device        Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([deviceId])
+  @@index([executedAt])
+  @@map("command_history")
+}
+
+// Session model for tracking active connections
+model Session {
+  id            String    @id @default(cuid())
+  userId        String
+  deviceId      String
+  connectedAt   DateTime  @default(now())
+  disconnectedAt DateTime?
+  ipAddress     String?
+  
+  @@index([userId])
+  @@index([deviceId])
+  @@map("sessions")
+}
