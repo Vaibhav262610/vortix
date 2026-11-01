@@ -6,6 +6,7 @@ interface FileTransferProps {
 	deviceName: string;
 	ws: WebSocket | null;
 	onClose: () => void;
+	initialPath?: string;
 	fileListData?: { files: FileItem[]; path: string } | null;
 }
 
@@ -20,9 +21,10 @@ export function FileTransfer({
 	deviceName,
 	ws,
 	onClose,
+	initialPath = "Downloads",
 	fileListData,
 }: FileTransferProps) {
-	const currentPath = fileListData?.path || "Downloads";
+	const currentPath = fileListData?.path || initialPath;
 	const files = fileListData?.files || [];
 	const [uploading, setUploading] = useState(false);
 	const [uploadMessage, setUploadMessage] = useState("");
@@ -43,8 +45,8 @@ export function FileTransfer({
 	}, [ws, deviceName]);
 
 	useEffect(() => {
-		browseFiles("Downloads");
-	}, [browseFiles]);
+		browseFiles(initialPath);
+	}, [browseFiles, initialPath]);
 
 	useEffect(() => {
 		if (!ws) return;

@@ -166,6 +166,9 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
     const denied = waitForMessage(secondDashboard, 'AUTH_ERROR');
     secondDashboard.send(JSON.stringify({ type: 'AUTH_DEVICE', deviceName: 'TEST', password: 'password' }));
     assert.match((await denied).error, /another account/);
+    const deniedScan = waitForMessage(secondDashboard, 'STORAGE_SCAN_RESULT');
+    secondDashboard.send(JSON.stringify({ type: 'SCAN_STORAGE', deviceName: 'TEST' }));
+    assert.match((await deniedScan).error, /denied/);
     secondDashboard.terminate();
 
     returningDashboard = new WebSocket(`ws://127.0.0.1:${port}/?type=dashboard`);
@@ -187,6 +190,16 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
     agent.send(JSON.stringify({ type: 'EXECUTE_RESULT', command: 'echo resumed', code: 0, output: 'resumed' }));
     await resumedResult;
     assert.deepEqual(unexpectedErrors, []);
+
+    const scanRequest = waitForMessage(agent, 'SCAN_STORAGE');
+    returningDashboard.send(JSON.stringify({ type: 'SCAN_STORAGE', deviceName: 'TEST' }));
+    const { requestId } = await scanRequest;
+    const scanResponse = waitForMessage(returningDashboard, 'STORAGE_SCAN_RESULT');
+    agent.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', requestId,
+      files: [{ name: 'large.zip', path: '/home/test/Downloads/large.zip', bytes: 1048576 }],
+      folders: [{ path: '/home/test/Downloads', bytes: 1048576 }],
+      scannedFiles: 1, scannedDirectories: 1, truncated: false }));
+    assert.equal((await scanResponse).files[0].name, 'large.zip');
     returningDashboard.terminate();
 
     const refreshed = waitForMessage(dashboard, 'USER_AUTH_REFRESHED');

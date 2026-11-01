@@ -5,6 +5,7 @@ const readline = require("readline");
 const fs = require("fs");
 const path = require("path");
 const screenshot = require("screenshot-desktop");
+const { scanStorage } = require('./storage-scan');
 
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
@@ -128,6 +129,7 @@ function startAgent() {
 
   let ws = null;
   let screenCaptureInterval = null;
+  let storageScanRunning = false;
   let heartbeatInterval = null;
   let reconnectTimeout = null;
   let isIntentionalClose = false;
@@ -452,6 +454,20 @@ function startAgent() {
               }
             }));
           });
+        }
+
+        // Read-only scan of common user folders for storage troubleshooting.
+        if (data.type === 'SCAN_STORAGE' && typeof data.requestId === 'string') {
+          if (storageScanRunning) {
+            ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', requestId: data.requestId, error: 'A storage scan is already running.' }));
+          } else {
+            storageScanRunning = true;
+            scanStorage().then(result => {
+              if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', requestId: data.requestId, ...result }));
+            }).catch(error => {
+              if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', requestId: data.requestId, error: error.message }));
+            }).finally(() => { storageScanRunning = false; });
+          }
         }
 
         // File browsing

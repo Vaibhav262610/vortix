@@ -20,6 +20,7 @@ const devices = new Map(); // deviceId -> { deviceName, password, status, ws, la
 const pendingResults = new Map();
 const screenShareSessions = new Map(); // deviceName -> Set of dashboard websockets
 const pendingAudits = new Map();
+const pendingStorageScans = new Map();
 
 // Helper to hash passwords
 function hashPassword(password) {
@@ -615,6 +616,28 @@ wss.on("connection", async (ws, req) => {
         }));
       }
 
+      if (data.type === 'SCAN_STORAGE') {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+        if (!ws.authenticatedDevices.has(deviceId)) {
+          ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: data.deviceName, error: 'Device access denied.' }));
+          return;
+        }
+        const targetDevice = devices.get(deviceId);
+        if (!targetDevice || targetDevice.status !== 'online') {
+          ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: data.deviceName, error: 'Device is offline.' }));
+          return;
+        }
+        const requestId = crypto.randomUUID();
+        const timer = setTimeout(() => {
+          pendingStorageScans.delete(requestId);
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: targetDevice.deviceName, error: 'Storage scan timed out. Update the device agent and try again.' }));
+          }
+        }, 20000);
+        pendingStorageScans.set(requestId, { client: ws, deviceId, timer });
+        targetDevice.ws.send(JSON.stringify({ type: 'SCAN_STORAGE', requestId }));
+      }
+
       // File transfer - Browse files
       if (data.type === "BROWSE_FILES") {
         console.log("Backend: Received BROWSE_FILES request for", data.deviceName, "path:", data.path);
@@ -688,6 +711,12 @@ wss.on("connection", async (ws, req) => {
     ws.on("close", () => {
       clearTimeout(sessionExpiryTimer);
       dashboardClients.delete(ws);
+      for (const [requestId, pending] of pendingStorageScans) {
+        if (pending.client === ws) {
+          clearTimeout(pending.timer);
+          pendingStorageScans.delete(requestId);
+        }
+      }
 
       // Clean up screen share sessions
       screenShareSessions.forEach((sessions, deviceName) => {
@@ -846,6 +875,26 @@ wss.on("connection", async (ws, req) => {
       });
     }
 
+    if (data.type === 'STORAGE_SCAN_RESULT' && typeof data.requestId === 'string') {
+      const pending = pendingStorageScans.get(data.requestId);
+      if (pending && pending.deviceId === deviceId) {
+        clearTimeout(pending.timer);
+        pendingStorageScans.delete(data.requestId);
+        if (pending.client.readyState === WebSocket.OPEN && pending.client.authenticatedDevices.has(deviceId)) {
+          const files = Array.isArray(data.files) ? data.files.slice(0, 12).filter(file =>
+            typeof file?.name === 'string' && typeof file?.path === 'string' && Number.isFinite(file?.bytes))
+            .map(file => ({ name: file.name.slice(0, 255), path: file.path.slice(0, 4096), bytes: file.bytes })) : [];
+          const folders = Array.isArray(data.folders) ? data.folders.slice(0, 8).filter(folder =>
+            typeof folder?.path === 'string' && Number.isFinite(folder?.bytes))
+            .map(folder => ({ path: folder.path.slice(0, 4096), bytes: folder.bytes })) : [];
+          pending.client.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: device.deviceName,
+            files, folders, scannedFiles: data.scannedFiles || 0,
+            scannedDirectories: data.scannedDirectories || 0, truncated: data.truncated === true,
+            error: typeof data.error === 'string' ? data.error.slice(0, 300) : undefined }));
+        }
+      }
+    }
+
     // Forward file list to authenticated dashboards
     if (data.type === "FILE_LIST") {
       console.log("Backend: Received FILE_LIST from agent", device.deviceName, "with", data.files?.length, "files");
@@ -923,6 +972,15 @@ wss.on("connection", async (ws, req) => {
   ws.on("close", () => {
     if (device.ws !== ws) return;
     device.status = "offline";
+    for (const [requestId, pending] of pendingStorageScans) {
+      if (pending.deviceId === deviceId) {
+        clearTimeout(pending.timer);
+        pendingStorageScans.delete(requestId);
+        if (pending.client.readyState === WebSocket.OPEN) {
+          pending.client.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: device.deviceName, error: 'Device disconnected during the scan.' }));
+        }
+      }
+    }
     console.log(`${device.deviceName} disconnected`);
     broadcastDevices();
   });

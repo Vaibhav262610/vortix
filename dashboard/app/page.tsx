@@ -11,7 +11,7 @@ const steps = [
 const capabilities = [
   ["01", "Command planning", "Turn a request into a visible, step-by-step command plan."],
   ["02", "Live device view", "See which of your devices are online and choose where to work."],
-  ["03", "Files and screen", "Browse files, transfer them, or open a live screen session when needed."],
+  ["03", "Storage rescue", "Find large folders and files on a connected device when storage runs low."],
   ["04", "Execution history", "Review commands, outcomes, and timing for your account."],
 ];
 
@@ -24,8 +24,8 @@ export default function LandingPage() {
         <div className="relative mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
           <div>
             <div className="site-kicker mb-7"><span className="site-kicker-dot" /> REMOTE OPERATIONS, MADE CLEAR</div>
-            <h1 className="max-w-2xl text-5xl font-semibold leading-[1.05] tracking-[-0.065em] sm:text-6xl lg:text-[5.5rem]">Every device.<br /><span className="text-emerald-400">One clear command.</span></h1>
-            <p className="mt-7 max-w-xl text-base leading-8 text-[#aabbb4] sm:text-lg">Connect your computers, plan tasks in plain language, review the commands, and follow what happens from one workspace.</p>
+            <h1 className="max-w-2xl text-5xl font-semibold leading-[1.05] tracking-[-0.065em] sm:text-6xl lg:text-[5.5rem]">Your computer is full.<br /><span className="text-emerald-400">See what is taking space.</span></h1>
+            <p className="mt-7 max-w-xl text-base leading-8 text-[#aabbb4] sm:text-lg">Scan common folders on your connected computer, inspect large files remotely, and decide what to do next. Review every command before it runs.</p>
             <div className="mt-9 flex flex-wrap gap-3"><Link href="/dashboard" className="site-button">Open dashboard <span aria-hidden="true">↗</span></Link><Link href="/setup" className="site-button-secondary">See setup guide <span aria-hidden="true">→</span></Link></div>
             <div className="mt-11 flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-white/10 pt-6 text-xs font-medium uppercase tracking-[0.16em] text-[#81958a]"><span>Device agent</span><span className="text-emerald-500">/</span><span>WebSocket backend</span><span className="text-emerald-500">/</span><span>Web dashboard</span></div>
           </div>

@@ -2,6 +2,8 @@
 
 Vortix is a remote device control project with a Next.js dashboard, a WebSocket backend, and a device agent. The dashboard uses Clerk for account sign-in. A separate device password unlocks each connected agent.
 
+The Storage Rescue check scans common user folders on an online device and lists the largest files and folders. It is read-only, bounded to 10,000 files or 12 seconds, and lets the owner open a result in the file browser. Update the agent and backend together to use it.
+
 ## Local setup (PowerShell)
 
 Use Node.js 20.19+, 22.12+, or 24+.

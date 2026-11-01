@@ -19,11 +19,7 @@ function StatBar({ label, value, color }: { label: string; value: number; color:
 }
 
 export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
-	const [stats, setStats] = useState<SystemStats>({
-		cpu: 0,
-		memory: 0,
-		disk: 0,
-	});
+	const [stats, setStats] = useState<SystemStats | null>(null);
 
 	useEffect(() => {
 		if (!ws || !deviceName) {
@@ -32,7 +28,7 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 
 		const handleMessage = (event: MessageEvent) => {
 			const data = JSON.parse(event.data);
-			if (data.type === "SYSTEM_STATS" && data.deviceName === deviceName) {
+			if (data.type === "SYSTEM_STATS" && data.deviceName === deviceName && data.stats) {
 				setStats(data.stats);
 			}
 		};
@@ -49,7 +45,7 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 			);
 		}
 
-		// Request stats every 1 second for real-time updates
+		// A health sample every 30 seconds avoids running a disk query every second.
 		const interval = setInterval(() => {
 			if (ws.readyState === WebSocket.OPEN) {
 				ws.send(
@@ -59,7 +55,7 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 					}),
 				);
 			}
-		}, 1000);
+		}, 30000);
 
 		return () => {
 			ws.removeEventListener("message", handleMessage);
@@ -84,11 +80,12 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 					/>
 				</svg>
 			}>
-			<div className="space-y-3">
+			{stats ? <div className="space-y-3">
 				<StatBar label="CPU" value={stats.cpu} color="bg-emerald-400" />
 				<StatBar label="Memory" value={stats.memory} color="bg-teal-400" />
 				<StatBar label="Disk" value={stats.disk} color="bg-emerald-500" />
-			</div>
+			</div> : deviceName && <p className="text-xs text-white/40">Waiting for device stats…</p>}
+			{stats && stats.disk >= 90 && <a href="#storage-rescue-title" className="mt-4 block rounded-lg border border-amber-400/20 bg-amber-400/10 p-3 text-xs leading-5 text-amber-200 hover:bg-amber-400/15">Disk use is high ({stats.disk}%). Scan storage to find large files →</a>}
 			{!deviceName && (
 				<p className="text-xs text-white/40 text-center mt-3">
 					Select a device to view stats

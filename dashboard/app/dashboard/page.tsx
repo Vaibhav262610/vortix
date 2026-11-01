@@ -10,6 +10,7 @@ import { DeviceStatusWidget } from "../../components/DeviceStatusWidget";
 import { FileTransfer, type FileItem } from "../../components/FileTransfer";
 import { MultiDeviceSelector } from "../../components/MultiDeviceSelector";
 import CommandHistory from "../../components/CommandHistory";
+import { StorageRescue } from "../../components/StorageRescue";
 
 type Device = {
 	deviceName: string;
@@ -475,6 +476,7 @@ export default function Home() {
 
 	// New feature states
 	const [showFileTransfer, setShowFileTransfer] = useState(false);
+	const [fileTransferInitialPath, setFileTransferInitialPath] = useState("Downloads");
 	const [showMultiDevice, setShowMultiDevice] = useState(false);
 	const [showWidgetsSidebar, setShowWidgetsSidebar] = useState(false);
 	const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -897,6 +899,12 @@ export default function Home() {
 		);
 	};
 
+	const openFileTransfer = (path = "Downloads") => {
+		setFileListData(null);
+		setFileTransferInitialPath(path);
+		setShowFileTransfer(true);
+	};
+
 	const handleMultiDeviceExecute = (deviceNames: string[], cmd: string) => {
 		wsRef.current?.send(
 			JSON.stringify({
@@ -1102,7 +1110,7 @@ export default function Home() {
 							transition={{ duration: 0.3, ease: [0.0, 0.0, 0.2, 1] }}>
 							<button
 								onClick={() => {
-									setShowFileTransfer(true);
+									openFileTransfer();
 									setShowMobileMenu(false);
 								}}
 								className="w-full text-left text-sm tracking-[0.2em] text-white/70 hover:text-white py-4 px-4 rounded-lg hover:bg-white/5 transition-all duration-200 border border-transparent hover:border-white/10">
@@ -2059,6 +2067,13 @@ export default function Home() {
 									)}
 								</div>
 							</div>
+							<StorageRescue
+								key={`${selectedDevice}:${wsConnected}`}
+								deviceName={selectedDevice}
+								online={devices.some((device) => device.deviceName === selectedDevice && device.status === "online")}
+								ws={activeWs}
+								onBrowseFolder={openFileTransfer}
+							/>
 							<section className="glass rounded-2xl p-5 sm:p-6">
 								<div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-medium uppercase tracking-widest text-white/45">Activity</p><h2 className="mt-2 text-lg font-semibold">Command history</h2></div><span className="text-xs text-white/40">Saved to your account</span></div>
 								<CommandHistory refreshKey={historyRefresh} />
@@ -2069,9 +2084,10 @@ export default function Home() {
 				{/* File Transfer Modal */}
 				{showFileTransfer && (
 					<FileTransfer
-						key={selectedDevice}
+							key={`${selectedDevice}:${fileTransferInitialPath}`}
 						deviceName={selectedDevice}
 						ws={activeWs}
+							initialPath={fileTransferInitialPath}
 						onClose={() => setShowFileTransfer(false)}
 						fileListData={fileListData}
 					/>
@@ -2108,7 +2124,7 @@ export default function Home() {
 						</svg>
 					</button>
 					<SystemStatsWidget
-						key={wsConnected ? "connected" : "disconnected"}
+						key={`${selectedDevice}:${wsConnected}`}
 						deviceName={selectedDevice}
 						ws={activeWs}
 					/>
@@ -2170,7 +2186,7 @@ export default function Home() {
 						</svg>
 					</button>
 					<button
-						onClick={() => setShowFileTransfer(true)}
+						onClick={() => openFileTransfer()}
 						disabled={!selectedDevice}
 						className="px-4 py-3 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/50 text-blue-400 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg backdrop-blur-sm"
 						title="Transfer files">
