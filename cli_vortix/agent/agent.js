@@ -128,12 +128,15 @@ function startAgent() {
 
   let ws = null;
   let screenCaptureInterval = null;
+  let heartbeatInterval = null;
   let reconnectTimeout = null;
   let isIntentionalClose = false;
 
   function connect() {
     console.log(`Attempting connection to: ${BACKEND_URL}`);
-    ws = new WebSocket(`${BACKEND_URL}?token=${encodeURIComponent(token)}`);
+    ws = new WebSocket(BACKEND_URL, {
+      headers: { Authorization: `Basic ${Buffer.from(token).toString('base64')}` }
+    });
 
     ws.on("open", () => {
       console.log("✅ Authenticated and connected to backend successfully!");
@@ -154,7 +157,8 @@ function startAgent() {
       );
 
       // Then send heartbeat every 5 seconds
-      setInterval(() => {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      heartbeatInterval = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           console.log("Sending heartbeat...");
           ws.send(
@@ -168,6 +172,10 @@ function startAgent() {
     });
 
     ws.on("close", (code, reason) => {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
       console.log("Disconnected from backend");
       console.log(`Close code: ${code}, Reason: ${reason || 'No reason provided'}`);
 
@@ -506,10 +514,12 @@ function startAgent() {
             targetPath = path.join(os.homedir(), "Documents");
           }
 
-          const filePath = path.join(targetPath, data.fileName);
-          const fileBuffer = Buffer.from(data.fileData, 'base64');
-
           try {
+            if (typeof data.fileName !== 'string' || path.basename(data.fileName) !== data.fileName || typeof data.fileData !== 'string') {
+              throw new Error('Invalid upload data');
+            }
+            const filePath = path.join(targetPath, data.fileName);
+            const fileBuffer = Buffer.from(data.fileData, 'base64');
             fs.writeFileSync(filePath, fileBuffer);
             console.log(`Agent: File uploaded successfully: ${filePath}`);
             ws.send(JSON.stringify({
@@ -517,6 +527,7 @@ function startAgent() {
               deviceName,
               message: `✓ File uploaded: ${data.fileName} to ${targetPath}`
             }));
+            ws.send(JSON.stringify({ type: 'FILE_UPLOAD_RESULT', fileName: data.fileName, success: true }));
           } catch (err) {
             console.error("Agent: Error uploading file:", err.message);
             ws.send(JSON.stringify({
@@ -524,6 +535,7 @@ function startAgent() {
               deviceName,
               message: `✗ Upload failed: ${err.message}`
             }));
+            ws.send(JSON.stringify({ type: 'FILE_UPLOAD_RESULT', fileName: data.fileName, success: false, error: err.message }));
           }
         }
 
@@ -643,9 +655,15 @@ function startAgent() {
 
       // Track if we've received any output
       let hasOutput = false;
+      let resultOutput = "";
+
+      const captureOutput = (chunk) => {
+        if (resultOutput.length < 16000) resultOutput += chunk.slice(0, 16000 - resultOutput.length);
+      };
 
       process.stdout.on("data", (data) => {
         hasOutput = true;
+        captureOutput(data.toString());
         ws.send(JSON.stringify({
           type: "LOG",
           deviceName,
@@ -655,6 +673,7 @@ function startAgent() {
 
       process.stderr.on("data", (data) => {
         hasOutput = true;
+        captureOutput(data.toString());
         ws.send(JSON.stringify({
           type: "LOG",
           deviceName,
@@ -681,7 +700,8 @@ function startAgent() {
         ws.send(JSON.stringify({
           type: "EXECUTE_RESULT",
           command,
-          code: typeof code === 'number' ? code : 0
+          code: typeof code === 'number' ? code : 1,
+          output: resultOutput
         }));
 
         isRunning = false;

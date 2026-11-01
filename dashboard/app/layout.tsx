@@ -18,8 +18,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-	title: "Vortix Control Panel",
-	description: "Device control and monitoring dashboard",
+	title: "Vortix — Remote Device Workspace",
+	description: "Connect devices, review AI command plans, and follow remote operations from one workspace.",
 };
 
 export default function RootLayout({

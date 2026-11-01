@@ -5,7 +5,13 @@ const http = require('node:http');
 const net = require('node:net');
 const crypto = require('node:crypto');
 const { once } = require('node:events');
+const os = require('node:os');
+const path = require('node:path');
 const WebSocket = require('ws');
+
+function testStoreEnv() {
+  return { DATABASE_URL: '', VORTIX_DATA_FILE: path.join(os.tmpdir(), `vortix-test-${crypto.randomUUID()}.json`) };
+}
 
 async function freePort() {
   const server = net.createServer();
@@ -93,7 +99,7 @@ test('dashboard WebSocket rejects commands and invalid Clerk sessions', { timeou
   const port = await freePort();
   const child = spawn(process.execPath, ['server.js'], {
     cwd: __dirname + '/..',
-    env: { ...process.env, PORT: String(port), CLERK_SECRET_KEY: 'sk_test_test-only' },
+    env: { ...process.env, ...testStoreEnv(), PORT: String(port), CLERK_SECRET_KEY: 'sk_test_test-only' },
     stdio: 'ignore',
   });
 
@@ -123,6 +129,7 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
     cwd: __dirname + '/..',
     env: {
       ...process.env,
+      ...testStoreEnv(),
       PORT: String(port),
       CLERK_SECRET_KEY: '',
       CLERK_JWT_KEY: publicKey.export({ type: 'spki', format: 'pem' }),
@@ -135,7 +142,7 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
 
   try {
     await waitForHealth(port, child);
-    agent = new WebSocket(`ws://127.0.0.1:${port}/?token=device-test:password`);
+    agent = new WebSocket(`ws://127.0.0.1:${port}/`, { headers: { Authorization: `Basic ${Buffer.from('device-test:password').toString('base64')}` } });
     await once(agent, 'open');
     dashboard = new WebSocket(`ws://127.0.0.1:${port}/?type=dashboard`);
     await once(dashboard, 'open');
@@ -144,19 +151,54 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
     const devices = waitForMessage(dashboard, 'DEVICES');
     dashboard.send(JSON.stringify({ type: 'AUTH_USER', token: signedToken(privateKey, 'user_test') }));
     await authenticated;
-    assert.equal((await devices).devices[0].deviceName, 'TEST');
+    assert.deepEqual((await devices).devices, []);
 
     const unlocked = waitForMessage(dashboard, 'AUTH_SUCCESS');
     dashboard.send(JSON.stringify({ type: 'AUTH_DEVICE', deviceName: 'TEST', password: 'password' }));
     await unlocked;
 
+    const secondDashboard = new WebSocket(`ws://127.0.0.1:${port}/?type=dashboard`);
+    await once(secondDashboard, 'open');
+    const secondDevices = waitForMessage(secondDashboard, 'DEVICES');
+    secondDashboard.send(JSON.stringify({ type: 'AUTH_USER', token: signedToken(privateKey, 'user_other') }));
+    assert.deepEqual((await secondDevices).devices, []);
+    const denied = waitForMessage(secondDashboard, 'AUTH_ERROR');
+    secondDashboard.send(JSON.stringify({ type: 'AUTH_DEVICE', deviceName: 'TEST', password: 'password' }));
+    assert.match((await denied).error, /another account/);
+    secondDashboard.terminate();
+
     const refreshed = waitForMessage(dashboard, 'USER_AUTH_REFRESHED');
     dashboard.send(JSON.stringify({ type: 'AUTH_USER', token: signedToken(privateKey, 'user_test', 120) }));
     await refreshed;
 
+    const invalidPlan = waitForMessage(dashboard, 'ERROR');
+    dashboard.send(JSON.stringify({ type: 'APPROVE_PLAN', deviceName: 'TEST', planId: 'made-up', steps: [{ command: 'echo unsafe' }] }));
+    assert.match((await invalidPlan).message, /invalid/);
+
+    const missingDevice = waitForMessage(dashboard, 'ERROR');
+    dashboard.send(JSON.stringify({ type: 'BROWSE_FILES' }));
+    assert.match((await missingDevice).message, /Device name/);
+
     const command = waitForMessage(agent, 'EXECUTE');
     dashboard.send(JSON.stringify({ type: 'FORCE_EXECUTE', deviceName: 'TEST', command: 'echo ok' }));
     assert.equal((await command).command, 'echo ok');
+
+    const result = waitForMessage(dashboard, 'COMMAND_RESULT');
+    agent.send(JSON.stringify({ type: 'EXECUTE_RESULT', command: 'echo ok', code: 0, output: 'ok' }));
+    await result;
+    const noToken = await fetch(`http://127.0.0.1:${port}/api/history`);
+    assert.equal(noToken.status, 401);
+    const ownHistory = await fetch(`http://127.0.0.1:${port}/api/history`, { headers: { Authorization: `Bearer ${signedToken(privateKey, 'user_test')}` } });
+    assert.equal(ownHistory.status, 200);
+    assert.equal((await ownHistory.json()).commands[0].output, 'ok');
+    const otherHistory = await fetch(`http://127.0.0.1:${port}/api/history`, { headers: { Authorization: `Bearer ${signedToken(privateKey, 'user_other')}` } });
+    assert.deepEqual((await otherHistory.json()).commands, []);
+
+    const malformedClose = once(dashboard, 'close');
+    dashboard.send('null');
+    assert.equal((await malformedClose)[0], 1008);
+    const health = await fetch(`http://127.0.0.1:${port}/health`);
+    assert.equal(health.status, 200);
   } finally {
     dashboard?.terminate();
     agent?.terminate();

@@ -14,6 +14,10 @@ interface SystemStatsWidgetProps {
 	ws: WebSocket | null;
 }
 
+function StatBar({ label, value, color }: { label: string; value: number; color: string }) {
+	return <div className="space-y-1"><div className="flex items-center justify-between text-xs"><span className="text-white/60">{label}</span><span className="text-white/90 font-medium">{value}%</span></div><div className="h-2 bg-white/5 rounded-full overflow-hidden"><div className={`h-full ${color} transition-all duration-700 ease-in-out`} style={{ width: `${value}%` }} /></div></div>;
+}
+
 export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 	const [stats, setStats] = useState<SystemStats>({
 		cpu: 0,
@@ -63,29 +67,6 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 		};
 	}, [ws, deviceName]);
 
-	const StatBar = ({
-		label,
-		value,
-		color,
-	}: {
-		label: string;
-		value: number;
-		color: string;
-	}) => (
-		<div className="space-y-1">
-			<div className="flex items-center justify-between text-xs">
-				<span className="text-white/60">{label}</span>
-				<span className="text-white/90 font-medium">{value}%</span>
-			</div>
-			<div className="h-2 bg-white/5 rounded-full overflow-hidden">
-				<div
-					className={`h-full ${color} transition-all duration-700 ease-in-out`}
-					style={{ width: `${value}%` }}
-				/>
-			</div>
-		</div>
-	);
-
 	return (
 		<Widget
 			title="System Stats"
@@ -104,8 +85,8 @@ export function SystemStatsWidget({ deviceName, ws }: SystemStatsWidgetProps) {
 				</svg>
 			}>
 			<div className="space-y-3">
-				<StatBar label="CPU" value={stats.cpu} color="bg-blue-500" />
-				<StatBar label="Memory" value={stats.memory} color="bg-purple-500" />
+				<StatBar label="CPU" value={stats.cpu} color="bg-emerald-400" />
+				<StatBar label="Memory" value={stats.memory} color="bg-teal-400" />
 				<StatBar label="Disk" value={stats.disk} color="bg-emerald-500" />
 			</div>
 			{!deviceName && (

@@ -19,39 +19,30 @@ interface Command {
 
 interface CommandHistoryProps {
 	deviceId?: string;
+	refreshKey?: number;
 }
 
-export default function CommandHistory({ deviceId }: CommandHistoryProps) {
+export default function CommandHistory({ deviceId, refreshKey }: CommandHistoryProps) {
 	const [commands, setCommands] = useState<Command[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState(false);
 	const [search, setSearch] = useState("");
 	const [selectedCommand, setSelectedCommand] = useState<Command | null>(null);
 
 	useEffect(() => {
-		fetchHistory();
-	}, [deviceId, search]);
-
-	const fetchHistory = async () => {
-		try {
-			setLoading(true);
-			const params = new URLSearchParams({
-				...(deviceId && { deviceId }),
-				...(search && { search }),
-				limit: "50",
-			});
-
-			const response = await fetch(`/api/history?${params}`);
-			const data = await response.json();
-
-			if (data.commands) {
-				setCommands(data.commands);
-			}
-		} catch (error) {
-			console.error("Error fetching history:", error);
-		} finally {
-			setLoading(false);
-		}
-	};
+		const controller = new AbortController();
+		const params = new URLSearchParams({
+			...(deviceId && { deviceId }),
+			...(search && { search }),
+			limit: "50",
+		});
+		fetch(`/api/history?${params}`, { signal: controller.signal })
+			.then(response => { if (!response.ok) throw new Error('History unavailable'); return response.json(); })
+			.then(data => { setError(false); if (data.commands) setCommands(data.commands); })
+			.catch(error => { if (error.name !== 'AbortError') { console.error('Error fetching history:', error); setError(true); } })
+			.finally(() => { if (!controller.signal.aborted) setLoading(false); });
+		return () => controller.abort();
+	}, [deviceId, search, refreshKey]);
 
 	const formatDate = (dateString: string) => {
 		const date = new Date(dateString);
@@ -97,7 +88,7 @@ export default function CommandHistory({ deviceId }: CommandHistoryProps) {
 				<input
 					type="text"
 					value={search}
-					onChange={(e) => setSearch(e.target.value)}
+					onChange={(e) => { setLoading(true); setError(false); setSearch(e.target.value); }}
 					placeholder="Search commands..."
 					className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-emerald-500/50 transition"
 				/>
@@ -122,6 +113,8 @@ export default function CommandHistory({ deviceId }: CommandHistoryProps) {
 						<div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-emerald-500 mx-auto"></div>
 						<p className="mt-4">Loading history...</p>
 					</div>
+				) : error ? (
+					<p className="py-8 text-center text-sm text-red-300">History is unavailable. Check the backend connection.</p>
 				) : commands.length === 0 ? (
 					<div className="text-center py-12 text-white/40">
 						<svg

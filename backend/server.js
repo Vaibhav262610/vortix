@@ -6,6 +6,7 @@ const readline = require("readline");
 const axios = require("axios");
 const crypto = require("crypto");
 const { selectGroqKey, generateGroqPlan } = require('./lib/groq-planning');
+const store = require('./lib/store');
 
 if (!/^sk_(test|live)_/.test(process.env.CLERK_SECRET_KEY || '') && !process.env.CLERK_JWT_KEY) {
   throw new Error('Configure CLERK_SECRET_KEY (sk_test_ or sk_live_) or CLERK_JWT_KEY');
@@ -18,33 +19,90 @@ const dashboardClients = new Set();
 const devices = new Map(); // deviceId -> { deviceName, password, status, ws, lastSeen, platform }
 const pendingResults = new Map();
 const screenShareSessions = new Map(); // deviceName -> Set of dashboard websockets
+const pendingAudits = new Map();
 
 // Helper to hash passwords
 function hashPassword(password) {
-  return crypto.createHash('sha256').update(password).digest('hex');
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  if (!stored || !stored.includes(':')) return false;
+  const [salt, expected] = stored.split(':');
+  const actual = crypto.scryptSync(password, salt, 64);
+  const expectedBuffer = Buffer.from(expected, 'hex');
+  return actual.length === expectedBuffer.length && crypto.timingSafeEqual(actual, expectedBuffer);
+}
+
+async function verifySession(token) {
+  const authorizedParties = process.env.CLERK_AUTHORIZED_PARTIES
+    ?.split(',').map(origin => origin.trim()).filter(Boolean);
+  return verifyToken(token, {
+    ...(process.env.CLERK_SECRET_KEY ? { secretKey: process.env.CLERK_SECRET_KEY } : {}),
+    ...(process.env.CLERK_JWT_KEY ? { jwtKey: process.env.CLERK_JWT_KEY.replace(/\\n/g, '\n') } : {}),
+    ...(authorizedParties?.length ? { authorizedParties } : {}),
+  });
 }
 
 // Create HTTP server for health checks and WebSocket upgrade
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   if (req.url === '/health' || req.url === '/') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'ok',
+      persistence: store.mode,
       devices: devices.size,
       dashboards: dashboardClients.size,
       uptime: process.uptime()
     }));
+  } else if (req.method === 'GET' && (req.url?.startsWith('/api/history') || req.url?.startsWith('/api/stats'))) {
+    try {
+      const token = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+      if (!token) {
+        res.writeHead(401); res.end('Unauthorized'); return;
+      }
+      const claims = await verifySession(token);
+      const url = new URL(req.url, 'http://localhost');
+      let payload;
+      if (url.pathname === '/api/history') {
+        const requestedLimit = Number(url.searchParams.get('limit'));
+        const requestedOffset = Number(url.searchParams.get('offset'));
+        const limit = Number.isSafeInteger(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 50;
+        const offset = Number.isSafeInteger(requestedOffset) ? Math.max(0, requestedOffset) : 0;
+        payload = await store.getHistory(claims.sub, {
+          deviceId: url.searchParams.get('deviceId'),
+          search: url.searchParams.get('search')?.slice(0, 100), limit, offset,
+        });
+      } else if (url.pathname === '/api/stats') {
+        payload = await store.getStats(claims.sub);
+      } else {
+        res.writeHead(404); res.end('Not Found'); return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(payload));
+    } catch (error) {
+      const unauthorized = /token|jwt|session|authorized|expired/i.test(error.message);
+      res.writeHead(unauthorized ? 401 : 500);
+      res.end(unauthorized ? 'Unauthorized' : 'Server error');
+    }
   } else {
     res.writeHead(404);
     res.end('Not Found');
   }
 });
 
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({ server, maxPayload: 16 * 1024 * 1024 });
 
-server.listen(PORT, () => {
-  console.log(`Backend running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
+store.init().then(() => server.listen(PORT, () => {
+  console.log(`Backend running on port ${PORT} (${store.mode} persistence)`);
+  if (process.env.NODE_ENV === 'production' && store.mode === 'file') {
+    console.warn('File persistence is not durable on an ephemeral host. Configure DATABASE_URL for production.');
+  }
+})).catch(error => {
+  console.error('Could not initialize persistence:', error);
+  process.exit(1);
 });
 
 function waitForExecuteResult(deviceName, command, timeoutMs = 120000) {
@@ -66,16 +124,31 @@ function waitForExecuteResult(deviceName, command, timeoutMs = 120000) {
   });
 }
 
+function trackCommand(userId, deviceId, deviceName, command) {
+  const list = pendingAudits.get(deviceId) || [];
+  const entry = { userId, deviceId, deviceName, command, startedAt: Date.now() };
+  entry.timer = setTimeout(() => {
+    const queue = pendingAudits.get(deviceId) || [];
+    const index = queue.indexOf(entry);
+    if (index >= 0) queue.splice(index, 1);
+    store.saveCommand({ userId, deviceId, deviceName, command, status: 'error', output: 'Agent response timed out', duration: Date.now() - entry.startedAt }).catch(console.error);
+  }, 120000);
+  list.push(entry);
+  pendingAudits.set(deviceId, list);
+}
+
 // ---------- WebSocket Handling ----------
-wss.on("connection", (ws, req) => {
+wss.on("connection", async (ws, req) => {
   const url = new URL(req.url, "http://localhost");
 
-  const token = url.searchParams.get("token");
+  const basicAuth = req.headers.authorization?.match(/^Basic (.+)$/i)?.[1];
+  const token = basicAuth ? Buffer.from(basicAuth, 'base64').toString('utf8') : url.searchParams.get("token");
   const clientType = url.searchParams.get("type");
 
   // ===== DASHBOARD CONNECTION =====
   if (clientType === "dashboard") {
     ws.authenticatedDevices = new Set(); // Track which devices this dashboard can access
+    ws.pendingPlans = new Map();
     ws.userId = null;
     let sessionExpiryTimer;
 
@@ -84,6 +157,10 @@ wss.on("connection", (ws, req) => {
       try {
         data = JSON.parse(message);
       } catch {
+        ws.close(1008, 'Invalid message');
+        return;
+      }
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
         ws.close(1008, 'Invalid message');
         return;
       }
@@ -97,13 +174,7 @@ wss.on("connection", (ws, req) => {
         }
 
         try {
-          const authorizedParties = process.env.CLERK_AUTHORIZED_PARTIES
-            ?.split(',').map(origin => origin.trim()).filter(Boolean);
-          const claims = await verifyToken(data.token, {
-            ...(process.env.CLERK_SECRET_KEY ? { secretKey: process.env.CLERK_SECRET_KEY } : {}),
-            ...(process.env.CLERK_JWT_KEY ? { jwtKey: process.env.CLERK_JWT_KEY.replace(/\\n/g, '\n') } : {}),
-            ...(authorizedParties?.length ? { authorizedParties } : {}),
-          });
+          const claims = await verifySession(data.token);
           if (ws.readyState !== WebSocket.OPEN) return;
           if (ws.userId && ws.userId !== claims.sub) {
             ws.close(1008, 'Session user changed');
@@ -118,7 +189,7 @@ wss.on("connection", (ws, req) => {
           if (firstAuthentication) {
             dashboardClients.add(ws);
             ws.send(JSON.stringify({ type: 'USER_AUTH_SUCCESS' }));
-            broadcastDevicesToDashboard(ws);
+            await broadcastDevicesToDashboard(ws);
             console.log('Dashboard authenticated');
           } else {
             ws.send(JSON.stringify({ type: 'USER_AUTH_REFRESHED' }));
@@ -133,12 +204,27 @@ wss.on("connection", (ws, req) => {
         ws.close(1008, 'Authentication required');
         return;
       }
+      if (data.type !== 'AUTH_DEVICE' && data.type !== 'MULTI_DEVICE_EXECUTE' &&
+          typeof data.deviceName !== 'string') {
+        ws.send(JSON.stringify({ type: 'ERROR', message: 'Device name is required' }));
+        return;
+      }
 
       // Dashboard authenticates to view a specific device
       if (data.type === "AUTH_DEVICE") {
         const { deviceName, password } = data;
+        if (typeof deviceName !== 'string' || typeof password !== 'string') {
+          ws.send(JSON.stringify({ type: 'AUTH_ERROR', deviceName, error: 'Device name and password are required' }));
+          return;
+        }
         const deviceId = `device-${deviceName.toLowerCase()}`;
-        const device = devices.get(deviceId);
+        let device;
+        try { device = await store.getDevice(deviceId); }
+        catch (error) {
+          console.error('Could not load device:', error);
+          ws.send(JSON.stringify({ type: 'AUTH_ERROR', deviceName, error: 'Device storage is unavailable' }));
+          return;
+        }
 
         if (!device) {
           ws.send(JSON.stringify({
@@ -149,7 +235,7 @@ wss.on("connection", (ws, req) => {
           return;
         }
 
-        if (device.passwordHash !== hashPassword(password)) {
+        if (!verifyPassword(password, device.passwordHash)) {
           ws.send(JSON.stringify({
             type: "AUTH_ERROR",
             deviceName,
@@ -158,19 +244,35 @@ wss.on("connection", (ws, req) => {
           return;
         }
 
+        let claimed;
+        try { claimed = await store.claimDevice(deviceId, ws.userId); }
+        catch (error) {
+          console.error('Could not claim device:', error);
+          ws.send(JSON.stringify({ type: 'AUTH_ERROR', deviceName, error: 'Device storage is unavailable' }));
+          return;
+        }
+        if (!claimed) {
+          ws.send(JSON.stringify({ type: 'AUTH_ERROR', deviceName, error: 'This device belongs to another account' }));
+          return;
+        }
+
+        const liveDevice = devices.get(deviceId);
+        if (liveDevice) liveDevice.ownerId = ws.userId;
+
         // Authentication successful
         ws.authenticatedDevices.add(deviceId);
         ws.send(JSON.stringify({
           type: "AUTH_SUCCESS",
-          deviceName
+          deviceName: device.name
         }));
 
         // Send updated device list
-        broadcastDevicesToDashboard(ws);
+        broadcastDevices();
         return;
       }
 
       if (data.type === "FORCE_EXECUTE") {
+        if (typeof data.deviceName !== 'string' || typeof data.command !== 'string' || !data.command.trim()) return;
         const deviceId = `device-${data.deviceName.toLowerCase()}`;
 
         if (!ws.authenticatedDevices.has(deviceId)) {
@@ -184,6 +286,8 @@ wss.on("connection", (ws, req) => {
         const targetDevice = devices.get(deviceId);
         if (!targetDevice || targetDevice.status !== "online") return;
 
+        trackCommand(ws.userId, deviceId, targetDevice.deviceName, data.command);
+
         targetDevice.ws.send(
           JSON.stringify({
             type: "EXECUTE",
@@ -193,6 +297,7 @@ wss.on("connection", (ws, req) => {
       }
 
       if (data.type === "APPROVE_PLAN") {
+        if (typeof data.deviceName !== 'string' || typeof data.planId !== 'string') return;
         const deviceId = `device-${data.deviceName.toLowerCase()}`;
 
         if (!ws.authenticatedDevices.has(deviceId)) {
@@ -213,6 +318,13 @@ wss.on("connection", (ws, req) => {
           return;
         }
 
+        const pendingPlan = ws.pendingPlans.get(data.planId);
+        if (!pendingPlan || pendingPlan.deviceId !== deviceId || pendingPlan.expiresAt < Date.now()) {
+          ws.send(JSON.stringify({ type: 'ERROR', message: 'Plan expired or invalid. Generate a new plan.' }));
+          return;
+        }
+        ws.pendingPlans.delete(data.planId);
+
         // Notify dashboard execution started
         ws.send(JSON.stringify({
           type: "EXECUTION_STARTED",
@@ -222,8 +334,10 @@ wss.on("connection", (ws, req) => {
         // Execute steps sequentially
         (async () => {
           let aborted = false;
-          for (const step of data.steps) {
-            const commandToExecute = step.command || step;
+          for (const commandToExecute of pendingPlan.steps) {
+
+            trackCommand(ws.userId, deviceId, targetDevice.deviceName, commandToExecute);
+            const resultPromise = waitForExecuteResult(targetDevice.deviceName, commandToExecute);
 
             targetDevice.ws.send(
               JSON.stringify({
@@ -233,7 +347,10 @@ wss.on("connection", (ws, req) => {
             );
 
             try {
-              const result = await waitForExecuteResult(targetDevice.deviceName, commandToExecute);
+              const result = await resultPromise;
+              if (typeof result.code === 'number' && result.code !== 0) {
+                throw new Error(`Step exited with code ${result.code}`);
+              }
 
               ws.send(JSON.stringify({
                 type: "LOG",
@@ -241,9 +358,6 @@ wss.on("connection", (ws, req) => {
                 message: `✓ Step completed: ${commandToExecute} (exit code: ${result.code})`
               }));
 
-              if (typeof result.code === 'number' && result.code !== 0) {
-                console.log(`Step exited with code ${result.code}`);
-              }
             } catch (err) {
               ws.send(JSON.stringify({
                 type: "LOG",
@@ -271,6 +385,7 @@ wss.on("connection", (ws, req) => {
       }
 
       if (data.type === "PLAN") {
+        if (typeof data.deviceName !== 'string' || typeof data.command !== 'string' || !data.command.trim()) return;
         const deviceId = `device-${data.deviceName.toLowerCase()}`;
 
         if (!ws.authenticatedDevices.has(deviceId)) {
@@ -292,18 +407,27 @@ wss.on("connection", (ws, req) => {
         }
 
         try {
-          const userApiKey = data.apiKey || null;
-
           const plan = await generatePlan(
             data.command,
             targetDevice.platform && targetDevice.platform !== "unknown" ? targetDevice.platform : "win32",
-            userApiKey
+            null
           );
+          if (ws.readyState !== WebSocket.OPEN) return;
+
+          const steps = Array.isArray(plan.steps) ? plan.steps.map(step => typeof step === 'string' ? step : step?.command)
+            .filter(step => typeof step === 'string' && step.trim() && step.length <= 4096).slice(0, 12) : [];
+          if (!steps.length) throw new Error('AI returned an empty or invalid plan');
+          for (const [id, pending] of ws.pendingPlans) {
+            if (pending.expiresAt < Date.now()) ws.pendingPlans.delete(id);
+          }
+          const planId = crypto.randomUUID();
+          ws.pendingPlans.set(planId, { deviceId, steps, expiresAt: Date.now() + 5 * 60 * 1000 });
 
           ws.send(JSON.stringify({
             type: "PLAN_PREVIEW",
             deviceName: data.deviceName,
-            steps: plan.steps
+            planId,
+            steps: steps.map(command => ({ command }))
           }));
         } catch (err) {
           ws.send(JSON.stringify({
@@ -446,6 +570,7 @@ wss.on("connection", (ws, req) => {
       // Multi-device execution
       if (data.type === "MULTI_DEVICE_EXECUTE") {
         const { deviceNames, command } = data;
+        if (!Array.isArray(deviceNames) || typeof command !== 'string' || !command.trim()) return;
 
         deviceNames.forEach(deviceName => {
           const deviceId = `device-${deviceName.toLowerCase()}`;
@@ -458,6 +583,8 @@ wss.on("connection", (ws, req) => {
           if (!targetDevice || targetDevice.status !== "online") {
             return;
           }
+
+          trackCommand(ws.userId, deviceId, targetDevice.deviceName, command);
 
           // Send command to each device
           targetDevice.ws.send(JSON.stringify({
@@ -512,6 +639,12 @@ wss.on("connection", (ws, req) => {
 
       // File transfer - Upload file
       if (data.type === "UPLOAD_FILE") {
+        if (typeof data.deviceName !== 'string' || typeof data.fileName !== 'string' ||
+            typeof data.fileData !== 'string' || data.fileData.length > 14 * 1024 * 1024 ||
+            /[\\/]/.test(data.fileName)) {
+          ws.send(JSON.stringify({ type: 'ERROR', message: 'Invalid upload or file exceeds 10 MB' }));
+          return;
+        }
         const deviceId = `device-${data.deviceName.toLowerCase()}`;
 
         if (!ws.authenticatedDevices.has(deviceId)) {
@@ -598,7 +731,7 @@ wss.on("connection", (ws, req) => {
   const deviceToken = tokenParts[0];
   const password = tokenParts.slice(1).join(':');
 
-  if (!deviceToken || !password) {
+  if (!/^device-[a-z0-9_.-]{1,80}$/i.test(deviceToken) || !password || password.length > 200) {
     console.log("Invalid token format");
     ws.close();
     return;
@@ -607,28 +740,30 @@ wss.on("connection", (ws, req) => {
   const deviceId = deviceToken;
   const deviceName = deviceToken.replace('device-', '').toUpperCase();
 
-  // Auto-register device or verify password
-  if (!devices.has(deviceId)) {
-    console.log(`Registering new device: ${deviceName}`);
-    devices.set(deviceId, {
-      deviceName,
-      passwordHash: hashPassword(password),
-      status: "offline",
-      ws: null,
-      lastSeen: null,
-      platform: "unknown" // Will be updated when agent connects
-    });
-  } else {
-    // Verify password
-    const device = devices.get(deviceId);
-    if (device.passwordHash !== hashPassword(password)) {
-      console.log(`Invalid password for device: ${deviceName}`);
-      ws.close();
-      return;
-    }
+  let storedDevice;
+  try {
+    storedDevice = await store.getDevice(deviceId);
+    if (!storedDevice) storedDevice = await store.registerDevice(deviceId, deviceName, hashPassword(password));
+  } catch (error) {
+    console.error('Device registration failed:', error);
+    ws.close(1011, 'Device registration failed');
+    return;
+  }
+  if (!verifyPassword(password, storedDevice.passwordHash)) {
+    console.log(`Invalid password for device: ${deviceName}`);
+    ws.close(1008, 'Invalid device password');
+    return;
   }
 
-  const device = devices.get(deviceId);
+  let device = devices.get(deviceId);
+  if (!device) {
+    device = { deviceName, passwordHash: storedDevice.passwordHash, ownerId: storedDevice.ownerId,
+      status: 'offline', ws: null, lastSeen: null, platform: storedDevice.platform || 'unknown' };
+    devices.set(deviceId, device);
+  }
+  if (device.ws && device.ws !== ws && device.ws.readyState === WebSocket.OPEN) {
+    device.ws.close(1000, 'New agent connection');
+  }
   device.ws = ws;
   device.status = "online";
   device.lastSeen = Date.now();
@@ -637,13 +772,19 @@ wss.on("connection", (ws, req) => {
   broadcastDevices();
 
   ws.on("message", (message) => {
-    const data = JSON.parse(message);
+    let data;
+    try { data = JSON.parse(message); } catch { ws.close(1008, 'Invalid message'); return; }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      ws.close(1008, 'Invalid message');
+      return;
+    }
 
     if (data.type === "HEARTBEAT") {
       device.lastSeen = Date.now();
       // Update platform info if provided
       if (data.platform) {
         device.platform = data.platform;
+        store.updatePlatform(deviceId, data.platform).catch(console.error);
       }
     }
 
@@ -736,7 +877,30 @@ wss.on("connection", (ws, req) => {
       });
     }
 
+    if (data.type === 'FILE_UPLOAD_RESULT') {
+      dashboardClients.forEach(client => {
+        if (client.authenticatedDevices.has(deviceId) && client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ type: 'FILE_UPLOAD_RESULT', deviceName: device.deviceName,
+            fileName: data.fileName, success: data.success === true, error: data.error }));
+        }
+      });
+    }
+
     if (data.type === "EXECUTE_RESULT") {
+      const auditQueue = pendingAudits.get(deviceId) || [];
+      const auditIndex = auditQueue.findIndex(entry => entry.command === data.command);
+      if (auditIndex >= 0) {
+        const [entry] = auditQueue.splice(auditIndex, 1);
+        clearTimeout(entry.timer);
+        store.saveCommand({ userId: entry.userId, deviceId, deviceName: device.deviceName,
+          command: entry.command, output: data.output || data.error || '', exitCode: data.code,
+          status: data.code === 0 ? 'success' : 'error', duration: Date.now() - entry.startedAt })
+          .then(() => dashboardClients.forEach(client => {
+            if (client.userId === entry.userId && client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({ type: 'COMMAND_RESULT', deviceName: device.deviceName, command: entry.command, code: data.code }));
+            }
+          })).catch(console.error);
+      }
       const list = pendingResults.get(device.deviceName) || [];
       for (let i = 0; i < list.length; i++) {
         const entry = list[i];
@@ -756,6 +920,7 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("close", () => {
+    if (device.ws !== ws) return;
     device.status = "offline";
     console.log(`${device.deviceName} disconnected`);
     broadcastDevices();
@@ -1040,30 +1205,29 @@ Return ONLY JSON with executable commands:
 
 
 // Helper to broadcast device list to a specific dashboard
-function broadcastDevicesToDashboard(dashboardWs) {
-  const deviceList = [];
-
-  devices.forEach((device, deviceId) => {
-    const isAuthenticated = dashboardWs.authenticatedDevices.has(deviceId);
-    console.log(`Device ${deviceId}: authenticated = ${isAuthenticated} `);
-
-    deviceList.push({
-      deviceName: device.deviceName,
-      status: device.status,
-      authenticated: isAuthenticated
+async function broadcastDevicesToDashboard(dashboardWs) {
+  if (!dashboardWs.userId || dashboardWs.readyState !== WebSocket.OPEN) return;
+  try {
+    const owned = await store.listDevices(dashboardWs.userId);
+    const deviceList = owned.map(record => {
+      const live = devices.get(record.id);
+      return {
+        deviceName: record.name,
+        status: live?.status === 'online' ? 'online' : 'offline',
+        authenticated: dashboardWs.authenticatedDevices.has(record.id),
+        platform: live?.platform || record.platform,
+      };
     });
-  });
-
-  console.log('Broadcasting devices to dashboard:', deviceList);
-
-  dashboardWs.send(JSON.stringify({
-    type: "DEVICES",
-    devices: deviceList,
-  }));
+    if (dashboardWs.readyState === WebSocket.OPEN) {
+      dashboardWs.send(JSON.stringify({ type: 'DEVICES', devices: deviceList }));
+    }
+  } catch (error) {
+    console.error('Could not load devices:', error);
+  }
 }
 
 function broadcastDevices() {
   dashboardClients.forEach((client) => {
-    broadcastDevicesToDashboard(client);
+    void broadcastDevicesToDashboard(client);
   });
 }

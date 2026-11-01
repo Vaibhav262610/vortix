@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState, useRef, JSX } from "react";
+import { useEffect, useState, useRef, useCallback, JSX } from "react";
 import { motion } from "framer-motion";
 import { useAuth, useUser, UserButton } from "@clerk/nextjs";
 import { quickCommands } from "../../quickCommands";
 import { SystemStatsWidget } from "../../components/SystemStatsWidget";
 import { RecentCommandsWidget } from "../../components/RecentCommandsWidget";
 import { DeviceStatusWidget } from "../../components/DeviceStatusWidget";
-import { FileTransfer } from "../../components/FileTransfer";
+import { FileTransfer, type FileItem } from "../../components/FileTransfer";
 import { MultiDeviceSelector } from "../../components/MultiDeviceSelector";
+import CommandHistory from "../../components/CommandHistory";
 
 type Device = {
 	deviceName: string;
@@ -25,6 +26,7 @@ type ApprovalDialog = {
 type AuthDialog = {
 	isOpen: boolean;
 	deviceName: string;
+	isNew?: boolean;
 } | null;
 
 // Helper function to render SVG icons
@@ -462,10 +464,13 @@ export default function Home() {
 	const { user } = useUser();
 	const [isPlanning, setIsPlanning] = useState(false);
 	const [isExecuting, setIsExecuting] = useState(false);
-	const [planPreview, setPlanPreview] = useState<any[]>([]);
+	const [planPreview, setPlanPreview] = useState<{ command: string }[]>([]);
+	const [planId, setPlanId] = useState("");
+	const [planDeviceName, setPlanDeviceName] = useState("");
 	const [approvalDialog, setApprovalDialog] = useState<ApprovalDialog>(null);
 	const [authDialog, setAuthDialog] = useState<AuthDialog>(null);
 	const [authPassword, setAuthPassword] = useState("");
+	const [claimName, setClaimName] = useState("");
 	const [showQuickCommands, setShowQuickCommands] = useState(false);
 
 	// New feature states
@@ -474,8 +479,9 @@ export default function Home() {
 	const [showWidgetsSidebar, setShowWidgetsSidebar] = useState(false);
 	const [showMobileMenu, setShowMobileMenu] = useState(false);
 	const [commandHistory, setCommandHistory] = useState<string[]>([]);
+	const [historyRefresh, setHistoryRefresh] = useState(0);
 	const [fileListData, setFileListData] = useState<{
-		files: any[];
+		files: FileItem[];
 		path: string;
 	} | null>(null);
 
@@ -485,6 +491,7 @@ export default function Home() {
 	const [command, setCommand] = useState("");
 
 	const wsRef = useRef<WebSocket | null>(null);
+	const [activeWs, setActiveWs] = useState<WebSocket | null>(null);
 	const [wsConnected, setWsConnected] = useState(false);
 	const logsRef = useRef<HTMLDivElement | null>(null);
 	const [autoScroll, setAutoScroll] = useState(true);
@@ -508,6 +515,15 @@ export default function Home() {
 
 		setTimeout(() => setIsExecuting(false), 1000);
 	};
+
+	const sendCommand = useCallback(() => {
+		if (!selectedDevice || !command.trim() || wsRef.current?.readyState !== WebSocket.OPEN) return;
+		setIsPlanning(true);
+		setIsExecuting(false);
+		setCommandHistory((prev) => [...prev, command]);
+		wsRef.current.send(JSON.stringify({ type: "PLAN", deviceName: selectedDevice, command }));
+		setCommand("");
+	}, [selectedDevice, command]);
 
 	// Keyboard shortcuts
 	useEffect(() => {
@@ -543,7 +559,7 @@ export default function Home() {
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [selectedDevice, command, isExecuting, isPlanning, showQuickCommands]);
+	}, [selectedDevice, command, isExecuting, isPlanning, showQuickCommands, showFileTransfer, showMultiDevice, sendCommand]);
 
 	useEffect(() => {
 		if (!isLoaded || !isSignedIn) return;
@@ -592,6 +608,7 @@ export default function Home() {
 
 					if (data.type === "USER_AUTH_SUCCESS") {
 						setWsConnected(true);
+						setActiveWs(ws);
 						setLogs((prev) => [...prev, "[SYSTEM] Connected to backend"]);
 						heartbeatInterval = setInterval(() => {
 							if (ws.readyState === WebSocket.OPEN) {
@@ -627,6 +644,7 @@ export default function Home() {
 						console.log("Device authenticated:", data.deviceName);
 						setAuthDialog(null);
 						setAuthPassword("");
+						setClaimName("");
 						setSelectedDevice(data.deviceName);
 					}
 
@@ -643,13 +661,17 @@ export default function Home() {
 					if (data.type === "PLAN_PREVIEW") {
 						console.log("Plan preview received:", data.steps);
 						setIsPlanning(false);
+						setIsExecuting(false);
 						setPlanPreview(data.steps);
+						setPlanId(data.planId);
+						setPlanDeviceName(data.deviceName);
 					}
 
 					if (data.type === "PLAN_ERROR") {
 						console.error("Plan error:", data.error);
 						setIsPlanning(false);
 						setIsExecuting(false);
+						setPlanId("");
 						setLogs((prev) => [...prev, `[ERROR] ${data.error}`]);
 						alert(
 							`AI Planning Error: ${data.error}\n\nPlease enter commands directly instead.`,
@@ -674,6 +696,14 @@ export default function Home() {
 							...prev,
 							`[${data.deviceName}] ${data.message}`,
 						]);
+					}
+					if (data.type === "ERROR") {
+						setIsExecuting(false);
+						setLogs((prev) => [...prev, `[ERROR] ${data.message}`]);
+					}
+					if (data.type === "COMMAND_RESULT") {
+						setIsExecuting(false);
+						setHistoryRefresh((value) => value + 1);
 					}
 
 					// Handle file download data
@@ -755,8 +785,13 @@ export default function Home() {
 					authRefreshInterval = undefined;
 					console.log("⚠️ Dashboard WebSocket disconnected");
 					setWsConnected(false);
+					setActiveWs(null);
 					setDevices([]);
 					setSelectedDevice("");
+					setIsPlanning(false);
+					setIsExecuting(false);
+					setPlanPreview([]);
+					setPlanId("");
 					if (disposed || event.code === 1008) {
 						if (!disposed) setLogs((prev) => [...prev, "[ERROR] Backend rejected authentication. Check Clerk configuration."]);
 						return;
@@ -801,30 +836,6 @@ export default function Home() {
 		}
 	}, [logs, autoScroll]);
 
-	const sendCommand = () => {
-		if (!selectedDevice || !command) return;
-
-		setIsPlanning(true);
-		setIsExecuting(true);
-
-		// Track command history
-		setCommandHistory((prev) => [...prev, command]);
-
-		// Get user's API key from localStorage
-		const userApiKey = localStorage.getItem("groq_api_key");
-
-		wsRef.current?.send(
-			JSON.stringify({
-				type: "PLAN",
-				deviceName: selectedDevice,
-				command,
-				apiKey: userApiKey || undefined, // Send user's API key if available
-			}),
-		);
-
-		setCommand("");
-	};
-
 	const handleApprove = () => {
 		if (approvalDialog) {
 			wsRef.current?.send(
@@ -867,12 +878,13 @@ export default function Home() {
 	};
 
 	const handleAuthSubmit = () => {
-		if (!authDialog || !authPassword) return;
+		const deviceName = authDialog?.isNew ? claimName.trim() : authDialog?.deviceName;
+		if (!deviceName || !authPassword) return;
 
 		wsRef.current?.send(
 			JSON.stringify({
 				type: "AUTH_DEVICE",
-				deviceName: authDialog.deviceName,
+				deviceName,
 				password: authPassword,
 			}),
 		);
@@ -890,29 +902,29 @@ export default function Home() {
 	};
 
 	return (
-		<div className="min-h-screen bg-[#0d0d0f] text-white">
+		<div className="min-h-screen bg-[#080d0d] text-white">
 			{/* Top Navigation Bar */}
-			<nav className="fixed top-0 left-0 right-0 z-50  bg-black/20 backdrop-blur-sm border-b border-white/[0.06]">
+			<nav className="fixed top-0 left-0 right-0 z-50 bg-[#080d0d]/95 backdrop-blur-xl border-b border-emerald-400/10">
 				<div className="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-					<div className="text-sm tracking-[0.2em] font-medium">
-						VORTIX DASHBOARD
+					<div className="text-sm tracking-[0.2em] font-bold">
+						VORTIX <span className="ml-2 text-xs font-medium tracking-widest text-emerald-400/70">/ WORKSPACE</span>
 					</div>
 
 					{/* Desktop Navigation */}
 					<div className="hidden md:flex items-center gap-4">
 						<a
 							href="/setup"
-							className="px-6 py-3 bg-white/10 hover:bg-white/15 border border-white/20 rounded-2xl text-sm tracking-[0.1em] text-white/90 hover:text-white transition-all duration-200">
+							className="rounded-lg px-3 py-2 text-sm text-white/60 hover:bg-white/5 hover:text-white transition-colors">
 							Setup Guide
 						</a>
 						<a
 							href="/settings"
-							className="px-6 py-3 bg-white/10 hover:bg-white/15 border border-white/20 rounded-2xl text-sm tracking-[0.1em] text-white/90 hover:text-white transition-all duration-200">
+							className="rounded-lg px-3 py-2 text-sm text-white/60 hover:bg-white/5 hover:text-white transition-colors">
 							Settings
 						</a>
 						<a
 							href="/contact"
-							className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-2xl text-sm tracking-[0.1em] text-white transition-all duration-200 shadow-lg">
+							className="rounded-lg px-3 py-2 text-sm text-white/60 hover:bg-white/5 hover:text-white transition-colors">
 							Contact
 						</a>
 						<div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
@@ -1192,14 +1204,24 @@ export default function Home() {
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
 					<div className="glass rounded-2xl border border-white/10 p-6 sm:p-8 max-w-md w-full mx-4 shadow-2xl">
 						<h3 className="text-lg font-semibold text-white mb-4">
-							Enter Device Password
+							{authDialog.isNew ? "Add your device" : "Enter Device Password"}
 						</h3>
-						<p className="text-sm text-white/60 mb-4">
+						{authDialog.isNew ? (
+							<p className="text-sm text-white/60 mb-4">Enter the device name shown by the agent and its password. The first account to add a device becomes its owner.</p>
+						) : <p className="text-sm text-white/60 mb-4">
 							Device:{" "}
 							<span className="font-mono text-emerald-400">
 								{authDialog.deviceName}
 							</span>
-						</p>
+						</p>}
+						{authDialog.isNew && <input
+							type="text"
+							value={claimName}
+							onChange={(e) => setClaimName(e.target.value)}
+							placeholder="Device name, e.g. MY-PC"
+							className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 mb-3"
+							autoFocus
+						/>}
 						<input
 							type="password"
 							value={authPassword}
@@ -1207,26 +1229,27 @@ export default function Home() {
 							onKeyDown={(e) => e.key === "Enter" && handleAuthSubmit()}
 							placeholder="Enter password..."
 							className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 mb-4"
-							autoFocus
+							autoFocus={!authDialog.isNew}
 						/>
 						<div className="flex gap-3">
 							<button
 								onClick={() => {
 									setAuthDialog(null);
 									setAuthPassword("");
+									setClaimName("");
 								}}
 								className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-white/80 text-sm font-medium hover:bg-white/10 transition">
 								Cancel
 							</button>
 							<button
 								onClick={handleAuthSubmit}
-								disabled={!authPassword}
+								disabled={!authPassword || (authDialog.isNew && !claimName.trim())}
 								className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition ${
 									authPassword
 										? "bg-emerald-600 hover:bg-emerald-700 text-white"
 										: "bg-white/5 text-white/40 cursor-not-allowed"
 								}`}>
-								Unlock
+								{authDialog.isNew ? "Add Device" : "Unlock"}
 							</button>
 						</div>
 					</div>
@@ -1456,7 +1479,7 @@ export default function Home() {
 						{/* Actions */}
 						<div className="flex gap-3">
 							<button
-								onClick={() => setPlanPreview([])}
+								onClick={() => { setPlanPreview([]); setPlanId(""); setPlanDeviceName(""); }}
 								className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-white/80 text-sm font-medium hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white/20">
 								Cancel
 							</button>
@@ -1465,11 +1488,13 @@ export default function Home() {
 									wsRef.current?.send(
 										JSON.stringify({
 											type: "APPROVE_PLAN",
-											deviceName: selectedDevice,
-											steps: planPreview,
+											deviceName: planDeviceName,
+											planId,
 										}),
 									);
+									setIsExecuting(true);
 									setPlanPreview([]);
+									setPlanId("");
 								}}
 								className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-emerald-500/50">
 								Approve & Execute
@@ -1547,9 +1572,20 @@ export default function Home() {
 					</div>
 				</header> */}
 
+				<header className="mb-7 flex flex-wrap items-end justify-between gap-4 border-b border-white/10 pb-6 lg:mr-80">
+					<div><p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-400">Your workspace</p><h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Welcome{user?.firstName ? `, ${user.firstName}` : ""}.</h1><p className="mt-2 text-sm text-white/50">Choose a device, review a plan, and follow the result.</p></div>
+					<div className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${wsConnected ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border-white/15 bg-white/5 text-white/50"}`}>{wsConnected ? "Backend connected" : "Connecting to backend"}</div>
+				</header>
 				<div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:mr-80">
 					{/* Devices — glass panel */}
 					<div className="glass rounded-2xl p-5 sm:p-6 h-fit">
+						<div className="flex items-center justify-between gap-2 mb-5">
+							<p className="text-xs font-medium uppercase tracking-widest text-white/45">Your Devices</p>
+							<button type="button" onClick={() => setAuthDialog({ isOpen: true, deviceName: "", isNew: true })}
+								className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">
+								+ Add device
+							</button>
+						</div>
 						{devices.length === 0 ? (
 							<>
 								<div className="flex items-center justify-between mb-4">
@@ -1559,11 +1595,10 @@ export default function Home() {
 								</div>
 								<div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-6 text-center">
 									<p className="text-sm text-white/70 mb-4">
-										No devices connected yet
+										No devices added yet
 									</p>
 									<p className="text-xs text-white/50 mb-4">
-										Install Vortix CLI and start an agent to see your devices
-										here
+										Start an agent, then use Add device above with its computer name and password.
 									</p>
 									<a
 										href="/setup"
@@ -2017,6 +2052,10 @@ export default function Home() {
 									)}
 								</div>
 							</div>
+							<section className="glass rounded-2xl p-5 sm:p-6">
+								<div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-medium uppercase tracking-widest text-white/45">Activity</p><h2 className="mt-2 text-lg font-semibold">Command history</h2></div><span className="text-xs text-white/40">Saved to your account</span></div>
+								<CommandHistory refreshKey={historyRefresh} />
+							</section>
 					</div>
 				</div>
 
@@ -2025,7 +2064,7 @@ export default function Home() {
 					<FileTransfer
 						key={selectedDevice}
 						deviceName={selectedDevice}
-						ws={wsRef.current}
+						ws={activeWs}
 						onClose={() => setShowFileTransfer(false)}
 						fileListData={fileListData}
 					/>
@@ -2064,7 +2103,7 @@ export default function Home() {
 					<SystemStatsWidget
 						key={wsConnected ? "connected" : "disconnected"}
 						deviceName={selectedDevice}
-						ws={wsRef.current}
+						ws={activeWs}
 					/>
 					<DeviceStatusWidget
 						devices={devices}

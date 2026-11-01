@@ -1,90 +1,29 @@
-# Vortix Backend
+# Vortix backend
 
-WebSocket server for coordinating devices and dashboard.
+`server.js` is the active WebSocket and HTTP server. Use Node.js 20.19+, 22.12+, or 24+.
 
-## Features
+## Configuration
 
-- WebSocket server for real-time communication
-- Device registration and management
-- Command routing between dashboard and agents
-- AI-powered command planning (Ollama integration)
-- Heartbeat monitoring
+Copy `.env.example` to `.env` for local development. Set `CLERK_SECRET_KEY` from the same Clerk application as the dashboard. `CLERK_AUTHORIZED_PARTIES` should list allowed dashboard origins. Set `GROQ_API_KEY` on the backend for AI planning.
 
-## Environment Variables
+For production, set `DATABASE_URL` to a PostgreSQL connection string. The server creates its device and command tables at startup. Without `DATABASE_URL`, it saves to `backend/data/state.json`, or `VORTIX_DATA_FILE` if set. A local file is suitable for one process; Render's default filesystem is ephemeral, so configure PostgreSQL there.
 
-- `PORT` - Server port (default: 8080)
-- `CLERK_SECRET_KEY` - Clerk secret key (`sk_test_...` or `sk_live_...`), from the same Clerk application as the dashboard
-- `CLERK_JWT_KEY` - Optional Clerk JWT public key for local token verification (can be used instead of the secret key)
-- `CLERK_AUTHORIZED_PARTIES` - Optional comma-separated dashboard origins (recommended in production)
-- `GROQ_API_KEY` - Groq key used by AI planning; set this on the backend service in Render and redeploy
-
-Copy `.env.example` to `.env` for local development. The active `server.js` loads this file. Dashboard connections must send an `AUTH_USER` message containing a Clerk session token before accessing devices. Device passwords are still required to unlock individual devices.
-
-AI planning uses `openai/gpt-oss-120b` through Groq. The backend's `GROQ_API_KEY` takes precedence over a personal key saved in the dashboard's Settings page. Without a Groq key, Ollama is available only for local development.
-
-## Local Development
+## Run
 
 ```bash
-# Install dependencies
-npm install
-
-# Start server
+npm ci
 npm start
 ```
 
-Server will run on `ws://localhost:8080`
+Run `npm test` for authentication, ownership, and planning tests. The health endpoint is `GET /health`.
 
-## Deployment
+## Access model
 
-### Railway
+- The dashboard signs in with Clerk and sends a session token to the WebSocket server.
+- An agent registers using its device name and password in the WebSocket `Authorization` header. Use `wss://` outside local development. The server stores a salted password hash. The legacy URL token format remains accepted for older agents; update those agents before removing that compatibility path.
+- The first Clerk account to add a device with its name and password becomes its owner. Other accounts cannot see or unlock it.
+- Each dashboard connection must unlock its owned device with the device password before operations.
+- AI plans are held on the server for five minutes. The dashboard approves by plan ID; it cannot substitute commands in the approval message.
+- `GET /api/history` and `GET /api/stats` require `Authorization: Bearer <Clerk session token>` and only return the authenticated user's records.
 
-```bash
-railway up
-```
-
-### Render
-
-1. Connect GitHub repo
-2. Set build command: `npm install`
-3. Set start command: `npm start`
-
-### Heroku
-
-```bash
-heroku create
-git push heroku main
-```
-
-## API
-
-### WebSocket Endpoints
-
-**Agent Connection**
-
-```
-ws://backend-url?token=device-hostname:password
-```
-
-**Dashboard Connection**
-
-```
-ws://backend-url?type=dashboard
-```
-
-The dashboard must send `{ "type": "AUTH_USER", "token": "<Clerk session JWT>" }` after connecting.
-
-## Message Types
-
-See [ARCHITECTURE.md](../docs/ARCHITECTURE.md) for complete message
-documentation.
-
-## Requirements
-
-- Node.js >= 14.0.0
-- Ollama running on localhost:11434 (for AI planning)
-
-## Notes
-
-- AI planning requires Ollama with qwen2.5:7b model
-- Can be modified to use OpenAI instead
-- Supports multiple simultaneous device connections
+Agent passwords and ownership created by older in-memory versions cannot be migrated automatically. On first run with this version, reconnect the agent and add it from the intended account.

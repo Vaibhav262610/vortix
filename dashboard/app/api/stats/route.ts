@@ -5,17 +5,20 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_WS?.replace("wss://", "https
 
 export async function GET() {
 	try {
-		const { userId } = await auth();
+		const { userId, getToken } = await auth();
 
 		if (!userId) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		// Fetch from backend
-		const response = await fetch(`${BACKEND_URL}/api/stats?userId=${userId}`, {
+		const token = await getToken();
+		if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+		const response = await fetch(`${BACKEND_URL}/api/stats`, {
 			headers: {
-				"Content-Type": "application/json",
+				Authorization: `Bearer ${token}`,
 			},
+			cache: "no-store",
 		});
 
 		if (!response.ok) {

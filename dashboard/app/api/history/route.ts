@@ -5,7 +5,7 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_WS?.replace("wss://", "https
 
 export async function GET(request: NextRequest) {
 	try {
-		const { userId } = await auth();
+		const { userId, getToken } = await auth();
 
 		if (!userId) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -17,9 +17,11 @@ export async function GET(request: NextRequest) {
 		const limit = searchParams.get("limit") || "50";
 		const offset = searchParams.get("offset") || "0";
 
+		const token = await getToken();
+		if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
 		// Build query parameters
 		const params = new URLSearchParams({
-			userId,
 			limit,
 			offset,
 			...(deviceId && { deviceId }),
@@ -29,8 +31,9 @@ export async function GET(request: NextRequest) {
 		// Fetch from backend
 		const response = await fetch(`${BACKEND_URL}/api/history?${params}`, {
 			headers: {
-				"Content-Type": "application/json",
+				Authorization: `Bearer ${token}`,
 			},
+			cache: "no-store",
 		});
 
 		if (!response.ok) {

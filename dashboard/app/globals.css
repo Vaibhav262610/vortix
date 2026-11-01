@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0c0f17;
-  --foreground: #e2e8f0;
-  --card: #131922;
+  --background: #080d0d;
+  --foreground: #e8f0ed;
+  --card: #101b18;
   --card-border: rgba(148, 163, 184, 0.08);
-  --accent: #22d3ee;
-  --accent-dim: #0891b2;
-  --accent-glow: rgba(34, 211, 238, 0.25);
+  --accent: #34d399;
+  --accent-dim: #059669;
+  --accent-glow: rgba(52, 211, 153, 0.25);
   --success: #34d399;
   --success-glow: rgba(52, 211, 153, 0.2);
   --danger: #f87171;
@@ -31,13 +31,13 @@
 
 /* Dark theme (explicit) */
 .dark {
-  --background: #0c0f17;
-  --foreground: #e2e8f0;
-  --card: #131922;
+  --background: #080d0d;
+  --foreground: #e8f0ed;
+  --card: #101b18;
   --card-border: rgba(148, 163, 184, 0.08);
-  --accent: #22d3ee;
-  --accent-dim: #0891b2;
-  --accent-glow: rgba(34, 211, 238, 0.25);
+  --accent: #34d399;
+  --accent-dim: #059669;
+  --accent-glow: rgba(52, 211, 153, 0.25);
   --success: #34d399;
   --success-glow: rgba(52, 211, 153, 0.2);
   --danger: #f87171;
@@ -160,4 +160,32 @@ button {
 .light .glass-input {
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(15, 23, 42, 0.15);
+}
+
+.site-grid {
+  background-image: linear-gradient(rgba(103, 157, 125, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 157, 125, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+.site-kicker, .site-section-label {
+  color: #78d6a4;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.site-kicker { display: inline-flex; align-items: center; gap: 0.7rem; }
+.site-kicker-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: #4ade80; box-shadow: 0 0 16px #4ade80; }
+.site-card { border: 1px solid rgba(173, 214, 187, 0.12); border-radius: 1.25rem; background: #101b18; }
+.site-button, .site-button-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 1.25rem; min-height: 3.25rem; padding: 0.75rem 1.25rem; border-radius: 0.7rem; font-size: 0.9rem; font-weight: 700; transition: background 160ms, transform 160ms; }
+.site-button { background: #4ade80; color: #052014; }
+.site-button:hover { background: #86efac; transform: translateY(-2px); }
+.site-button-secondary { border: 1px solid rgba(184, 217, 195, 0.25); color: #dbece1; background: rgba(255,255,255,0.03); }
+.site-button-secondary:hover { background: rgba(255,255,255,0.09); transform: translateY(-2px); }
+
+:focus-visible { outline: 2px solid #4ade80; outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 interface FileTransferProps {
 	deviceName: string;
 	ws: WebSocket | null;
 	onClose: () => void;
-	fileListData?: { files: any[]; path: string } | null;
+	fileListData?: { files: FileItem[]; path: string } | null;
 }
 
-interface FileItem {
+export interface FileItem {
 	name: string;
 	type: "file" | "directory";
 	size?: number;
@@ -22,35 +22,15 @@ export function FileTransfer({
 	onClose,
 	fileListData,
 }: FileTransferProps) {
-	const [currentPath, setCurrentPath] = useState("Downloads");
-	const [files, setFiles] = useState<FileItem[]>([]);
+	const currentPath = fileListData?.path || "Downloads";
+	const files = fileListData?.files || [];
 	const [uploading, setUploading] = useState(false);
-	const [uploadProgress, setUploadProgress] = useState(0);
 	const [uploadMessage, setUploadMessage] = useState("");
+	const [uploadError, setUploadError] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const pendingFileRef = useRef<string | null>(null);
 
-	// Update files when fileListData changes
-	useEffect(() => {
-		if (fileListData) {
-			setFiles(fileListData.files);
-			setCurrentPath(fileListData.path);
-			console.log(
-				"FileTransfer: Updated file list",
-				fileListData.files.length,
-				"files",
-			);
-		}
-	}, [fileListData]);
-
-	// Browse Downloads folder on mount
-	useEffect(() => {
-		if (ws && ws.readyState === WebSocket.OPEN) {
-			console.log("FileTransfer: Initial browse to Downloads folder");
-			browseFiles("Downloads");
-		}
-	}, [ws, deviceName]);
-
-	const browseFiles = (path: string) => {
+	const browseFiles = useCallback((path: string) => {
 		if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
 		ws.send(
@@ -60,26 +40,56 @@ export function FileTransfer({
 				path,
 			}),
 		);
-	};
+	}, [ws, deviceName]);
 
-	const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-		const file = e.target.files?.[0];
-		if (!file || !ws || ws.readyState !== WebSocket.OPEN) return;
+	useEffect(() => {
+		browseFiles("Downloads");
+	}, [browseFiles]);
+
+	useEffect(() => {
+		if (!ws) return;
+		const onMessage = (event: MessageEvent) => {
+			let data;
+			try { data = JSON.parse(event.data); } catch { return; }
+			if (data.type !== 'FILE_UPLOAD_RESULT' || data.deviceName !== deviceName || data.fileName !== pendingFileRef.current) return;
+			pendingFileRef.current = null;
+			setUploading(false);
+			setUploadError(!data.success);
+			setUploadMessage(data.success ? `${data.fileName} uploaded successfully.` : `Upload failed: ${data.error || 'Unknown error'}`);
+			if (fileInputRef.current) fileInputRef.current.value = "";
+			if (data.success) browseFiles(currentPath);
+		};
+		ws.addEventListener('message', onMessage);
+		return () => ws.removeEventListener('message', onMessage);
+	}, [ws, deviceName, browseFiles, currentPath]);
+
+	useEffect(() => {
+		if (!uploading) return;
+		const timer = window.setTimeout(() => {
+			pendingFileRef.current = null;
+			setUploading(false);
+			setUploadError(true);
+			setUploadMessage('No upload confirmation from the device. Check the connection and try again.');
+		}, 60000);
+		return () => window.clearTimeout(timer);
+	}, [uploading]);
+
+	const handleFileUpload = (file?: File) => {
+		if (!file || !ws || ws.readyState !== WebSocket.OPEN || uploading) return;
+		if (file.size > 10 * 1024 * 1024) {
+			setUploadError(true);
+			setUploadMessage('Files must be 10 MB or smaller.');
+			return;
+		}
 
 		setUploading(true);
-		setUploadProgress(0);
+		setUploadMessage("");
+		setUploadError(false);
+		pendingFileRef.current = file.name;
 
 		const reader = new FileReader();
 		reader.onload = () => {
 			const base64 = (reader.result as string).split(",")[1];
-
-			// Simulate upload progress
-			let progress = 0;
-			const progressInterval = setInterval(() => {
-				progress += 10;
-				setUploadProgress(Math.min(progress, 90));
-			}, 100);
-
 			ws.send(
 				JSON.stringify({
 					type: "UPLOAD_FILE",
@@ -89,39 +99,8 @@ export function FileTransfer({
 					targetPath: currentPath || "Downloads",
 				}),
 			);
-
-			// Wait for upload to complete, then refresh
-			setTimeout(() => {
-				clearInterval(progressInterval);
-				setUploadProgress(100);
-
-				// Show success message
-				setUploadMessage(
-					`✓ ${file.name} uploaded successfully to ${currentPath || "Downloads"}!`,
-				);
-
-				// Refresh the file list after upload
-				setTimeout(() => {
-					setUploading(false);
-					setUploadProgress(0);
-
-					// Refresh current directory
-					const pathToRefresh = currentPath || "Downloads";
-					console.log("Refreshing file list for path:", pathToRefresh);
-					browseFiles(pathToRefresh);
-
-					// Reset file input
-					if (fileInputRef.current) {
-						fileInputRef.current.value = "";
-					}
-
-					// Clear success message after 3 seconds
-					setTimeout(() => {
-						setUploadMessage("");
-					}, 3000);
-				}, 500);
-			}, 1000);
 		};
+		reader.onerror = () => { setUploading(false); setUploadError(true); setUploadMessage('Could not read the file.'); pendingFileRef.current = null; };
 
 		reader.readAsDataURL(file);
 	};
@@ -145,7 +124,7 @@ export function FileTransfer({
 			const dataTransfer = new DataTransfer();
 			dataTransfer.items.add(file);
 			fileInputRef.current.files = dataTransfer.files;
-			handleFileUpload({ target: fileInputRef.current } as any);
+			handleFileUpload(file);
 		}
 	};
 
@@ -203,7 +182,7 @@ export function FileTransfer({
 						<input
 							ref={fileInputRef}
 							type="file"
-							onChange={handleFileUpload}
+							onChange={(event) => handleFileUpload(event.target.files?.[0])}
 							className="hidden"
 							id="file-upload"
 						/>
@@ -229,24 +208,11 @@ export function FileTransfer({
 						</label>
 					</div>
 
-					{uploading && (
-						<div className="mt-4">
-							<div className="flex items-center justify-between text-xs mb-2">
-								<span className="text-white/60">Uploading...</span>
-								<span className="text-white/90">{uploadProgress}%</span>
-							</div>
-							<div className="h-2 bg-white/5 rounded-full overflow-hidden">
-								<div
-									className="h-full bg-emerald-500 transition-all duration-300"
-									style={{ width: `${uploadProgress}%` }}
-								/>
-							</div>
-						</div>
-					)}
+					{uploading && <p className="mt-4 text-sm text-emerald-300" role="status">Uploading and waiting for device confirmation...</p>}
 
 					{uploadMessage && (
-						<div className="mt-4 px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/50">
-							<p className="text-sm text-emerald-400">{uploadMessage}</p>
+						<div className={`mt-4 px-4 py-2 rounded-lg border ${uploadError ? 'bg-red-500/10 border-red-500/30 text-red-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'}`} role="status">
+							<p className="text-sm">{uploadMessage}</p>
 						</div>
 					)}
 				</div>
