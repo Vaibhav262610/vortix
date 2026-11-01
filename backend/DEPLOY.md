@@ -17,7 +17,7 @@ Render supplies `PORT`. Do not place these secrets in `NEXT_PUBLIC_` dashboard v
 
 Create a PostgreSQL database and use its [internal URL](https://render.com/docs/postgresql-creating-connecting) for `DATABASE_URL` when the database and web service are in the same Render region. Render's [default web service filesystem is ephemeral](https://render.com/docs/disks), so the backend's file mode will lose ownership and history after a restart or redeploy. The backend creates its tables on startup.
 
-After deploying, open `https://YOUR-BACKEND-HOST/health` and confirm `"status":"ok"` and `"persistence":"postgres"`. Then connect an agent, sign in to the dashboard, and use **Add device** with the agent's computer name and device password.
+After deploying, open `https://YOUR-BACKEND-HOST/health` and confirm `"status":"ok"` and `"persistence":"postgres"`. Then connect an agent, sign in to the dashboard, and use **Add device** with the agent's computer name and device password. Returning to the dashboard with the same Clerk account restores access without asking for the device password again.
 
 Agent connections should use `wss://`. Current agents send the device credential in the WebSocket authorization header. Older agents using a URL token still connect for compatibility; update them when practical.
 

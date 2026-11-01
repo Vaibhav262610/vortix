@@ -139,6 +139,7 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
   });
   let agent;
   let dashboard;
+  let returningDashboard;
 
   try {
     await waitForHealth(port, child);
@@ -166,6 +167,27 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
     secondDashboard.send(JSON.stringify({ type: 'AUTH_DEVICE', deviceName: 'TEST', password: 'password' }));
     assert.match((await denied).error, /another account/);
     secondDashboard.terminate();
+
+    returningDashboard = new WebSocket(`ws://127.0.0.1:${port}/?type=dashboard`);
+    await once(returningDashboard, 'open');
+    const returningDevices = waitForMessage(returningDashboard, 'DEVICES');
+    returningDashboard.send(JSON.stringify({ type: 'AUTH_USER', token: signedToken(privateKey, 'user_test') }));
+    assert.deepEqual((await returningDevices).devices.map(device => [device.deviceName, device.authenticated]), [['TEST', true]]);
+
+    const unexpectedErrors = [];
+    returningDashboard.on('message', raw => {
+      const message = JSON.parse(raw.toString());
+      if (message.type === 'ERROR') unexpectedErrors.push(message.message);
+    });
+    returningDashboard.send(JSON.stringify({ type: 'DASHBOARD_HEARTBEAT' }));
+    const resumedCommand = waitForMessage(agent, 'EXECUTE');
+    returningDashboard.send(JSON.stringify({ type: 'FORCE_EXECUTE', deviceName: 'TEST', command: 'echo resumed' }));
+    assert.equal((await resumedCommand).command, 'echo resumed');
+    const resumedResult = waitForMessage(returningDashboard, 'COMMAND_RESULT');
+    agent.send(JSON.stringify({ type: 'EXECUTE_RESULT', command: 'echo resumed', code: 0, output: 'resumed' }));
+    await resumedResult;
+    assert.deepEqual(unexpectedErrors, []);
+    returningDashboard.terminate();
 
     const refreshed = waitForMessage(dashboard, 'USER_AUTH_REFRESHED');
     dashboard.send(JSON.stringify({ type: 'AUTH_USER', token: signedToken(privateKey, 'user_test', 120) }));
@@ -200,6 +222,7 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
     const health = await fetch(`http://127.0.0.1:${port}/health`);
     assert.equal(health.status, 200);
   } finally {
+    returningDashboard?.terminate();
     dashboard?.terminate();
     agent?.terminate();
     child.kill();

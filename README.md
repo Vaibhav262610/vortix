@@ -9,7 +9,7 @@ Use Node.js 20.19+, 22.12+, or 24+.
 1. In `backend`, run `npm ci`, copy `.env.example` to `.env`, and replace `CLERK_SECRET_KEY` with the secret key from your Clerk application. Run `npm start`.
 2. In `dashboard`, run `npm ci`, copy `.env.example` to `.env.local`, and set the publishable and secret keys from the **same Clerk application**. For a local backend, set `NEXT_PUBLIC_BACKEND_WS=ws://localhost:8080`. Run `npm run dev`.
 3. In `agent`, run `npm ci` and `node agent.js login` to set a device password. In the same PowerShell session, run `$env:BACKEND_URL='ws://localhost:8080'` and then `node agent.js start`.
-4. Open `http://localhost:3000/sign-up` to create an account, or `/auth` to sign in. Open `/dashboard`, click **Add device**, and enter the agent computer name and its device password. The first account to add a device becomes its owner.
+4. Open `http://localhost:3000/sign-up` to create an account, or `/auth` to sign in. Open `/dashboard`, click **Add device**, and enter the agent computer name and its device password. The first account to add a device becomes its owner; later visits restore that account's access automatically.
 
 The deployed dashboard and backend need the same Clerk application configuration. Set the backend's `CLERK_SECRET_KEY` (or `CLERK_JWT_KEY`) and redeploy it when updating the dashboard auth flow. `CLERK_AUTHORIZED_PARTIES` can restrict accepted session tokens to your dashboard origins.
 

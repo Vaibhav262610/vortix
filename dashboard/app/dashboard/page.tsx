@@ -497,15 +497,19 @@ export default function Home() {
 	const [autoScroll, setAutoScroll] = useState(true);
 
 	const executeQuickCommand = (cmd: string) => {
-		if (!selectedDevice) {
-			alert("Please select a device first");
+		if (!selectedDevice || wsRef.current?.readyState !== WebSocket.OPEN) {
+			alert("Connect to the backend and select a device first");
+			return;
+		}
+		if (!devices.some((device) => device.deviceName === selectedDevice && device.status === "online")) {
+			alert("The selected device is offline");
 			return;
 		}
 
 		setCommand(cmd);
 		setIsExecuting(true);
 
-		wsRef.current?.send(
+		wsRef.current.send(
 			JSON.stringify({
 				type: "FORCE_EXECUTE",
 				deviceName: selectedDevice,
@@ -513,7 +517,6 @@ export default function Home() {
 			}),
 		);
 
-		setTimeout(() => setIsExecuting(false), 1000);
 	};
 
 	const sendCommand = useCallback(() => {
@@ -638,6 +641,10 @@ export default function Home() {
 							);
 						});
 						setDevices(data.devices);
+						setSelectedDevice((current) => {
+							if (data.devices.some((device: Device) => device.deviceName === current && device.authenticated)) return current;
+							return data.devices.find((device: Device) => device.authenticated && device.status === "online")?.deviceName || "";
+						});
 					}
 
 					if (data.type === "AUTH_SUCCESS") {
@@ -792,9 +799,9 @@ export default function Home() {
 					setIsExecuting(false);
 					setPlanPreview([]);
 					setPlanId("");
-					if (disposed || event.code === 1008) {
-						if (!disposed) setLogs((prev) => [...prev, "[ERROR] Backend rejected authentication. Check Clerk configuration."]);
-						return;
+					if (disposed) return;
+					if (event.code === 1008) {
+						setLogs((prev) => [...prev, "[ERROR] Backend rejected the session. Retrying authentication..."]);
 					}
 					setLogs((prev) => [
 						...prev,

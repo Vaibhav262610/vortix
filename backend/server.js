@@ -204,6 +204,7 @@ wss.on("connection", async (ws, req) => {
         ws.close(1008, 'Authentication required');
         return;
       }
+      if (data.type === 'DASHBOARD_HEARTBEAT') return;
       if (data.type !== 'AUTH_DEVICE' && data.type !== 'MULTI_DEVICE_EXECUTE' &&
           typeof data.deviceName !== 'string') {
         ws.send(JSON.stringify({ type: 'ERROR', message: 'Device name is required' }));
@@ -1210,6 +1211,8 @@ async function broadcastDevicesToDashboard(dashboardWs) {
   try {
     const owned = await store.listDevices(dashboardWs.userId);
     const deviceList = owned.map(record => {
+      // A verified account owns this device; a new socket does not need its password again.
+      dashboardWs.authenticatedDevices.add(record.id);
       const live = devices.get(record.id);
       return {
         deviceName: record.name,
