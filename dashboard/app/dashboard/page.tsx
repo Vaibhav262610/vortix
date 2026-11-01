@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, JSX } from "react";
 import { motion } from "framer-motion";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useUser, UserButton } from "@clerk/nextjs";
 import { quickCommands } from "../../quickCommands";
 import { SystemStatsWidget } from "../../components/SystemStatsWidget";
 import { RecentCommandsWidget } from "../../components/RecentCommandsWidget";
@@ -459,6 +459,7 @@ const Icon = ({
 
 export default function Home() {
 	const { getToken, isLoaded, isSignedIn } = useAuth();
+	const { user } = useUser();
 	const [isPlanning, setIsPlanning] = useState(false);
 	const [isExecuting, setIsExecuting] = useState(false);
 	const [planPreview, setPlanPreview] = useState<any[]>([]);
@@ -914,6 +915,12 @@ export default function Home() {
 							className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 rounded-2xl text-sm tracking-[0.1em] text-white transition-all duration-200 shadow-lg">
 							Contact
 						</a>
+						<div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+							<UserButton />
+							<span className="max-w-28 truncate text-xs text-white/80">
+								{user?.firstName || user?.username || user?.primaryEmailAddress?.emailAddress || "Account"}
+							</span>
+						</div>
 						<button
 							onClick={() => setShowWidgetsSidebar(!showWidgetsSidebar)}
 							className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs tracking-[0.2em] transition lg:hidden">
@@ -922,9 +929,11 @@ export default function Home() {
 					</div>
 
 					{/* Mobile Menu Button */}
+					<div className="md:hidden flex items-center gap-3">
+						<UserButton />
 					<motion.button
 						onClick={() => setShowMobileMenu(!showMobileMenu)}
-						className="md:hidden p-2 hover:bg-white/5 rounded-lg transition-colors duration-200"
+						className="p-2 hover:bg-white/5 rounded-lg transition-colors duration-200"
 						whileTap={{ scale: 0.95 }}
 						animate={{ rotate: showMobileMenu ? 180 : 0 }}
 						transition={{ duration: 0.3 }}>
@@ -946,6 +955,7 @@ export default function Home() {
 							/>
 						</motion.svg>
 					</motion.button>
+					</div>
 				</div>
 
 				{/* Mobile Menu Dropdown */}
@@ -1537,7 +1547,7 @@ export default function Home() {
 					</div>
 				</header> */}
 
-				<div className="grid gap-6 lg:grid-cols-[320px_1fr] lg:mr-80">
+				<div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:mr-80">
 					{/* Devices — glass panel */}
 					<div className="glass rounded-2xl p-5 sm:p-6 h-fit">
 						{devices.length === 0 ? (
@@ -1863,8 +1873,10 @@ export default function Home() {
 							</button>
 						</div>
 
-						{/* Main: command + logs */}
-						<div className="flex flex-col gap-6">
+					</div>
+
+					{/* Main: command + logs */}
+					<div className="flex min-w-0 flex-col gap-6">
 							{/* Command — glass bar */}
 							<div className="hidden md:block glass rounded-2xl p-5 sm:p-6">
 								<div className="flex items-center justify-between mb-3">
@@ -2005,7 +2017,6 @@ export default function Home() {
 									)}
 								</div>
 							</div>
-						</div>
 					</div>
 				</div>
 
