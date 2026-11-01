@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, JSX } from "react";
 import { motion } from "framer-motion";
+import { useAuth, UserButton } from "@clerk/nextjs";
 import { quickCommands } from "../../quickCommands";
 import { SystemStatsWidget } from "../../components/SystemStatsWidget";
 import { RecentCommandsWidget } from "../../components/RecentCommandsWidget";
@@ -457,6 +458,7 @@ const Icon = ({
 };
 
 export default function Home() {
+	const { getToken, isLoaded, isSignedIn } = useAuth();
 	const [isPlanning, setIsPlanning] = useState(false);
 	const [isExecuting, setIsExecuting] = useState(false);
 	const [planPreview, setPlanPreview] = useState<any[]>([]);
@@ -543,6 +545,7 @@ export default function Home() {
 	}, [selectedDevice, command, isExecuting, isPlanning, showQuickCommands]);
 
 	useEffect(() => {
+		if (!isLoaded || !isSignedIn) return;
 		console.log("Connecting to backend WebSocket...");
 
 		// Use environment variable or fallback to local development
@@ -557,6 +560,9 @@ export default function Home() {
 
 		let reconnectTimeout: NodeJS.Timeout;
 		let ws: WebSocket;
+		let disposed = false;
+		let heartbeatInterval: ReturnType<typeof setInterval> | undefined;
+		let authRefreshInterval: ReturnType<typeof setInterval> | undefined;
 
 		const connect = () => {
 			try {
@@ -565,28 +571,46 @@ export default function Home() {
 				ws = new WebSocket(wsUrl);
 				wsRef.current = ws;
 
-				ws.onopen = () => {
-					console.log("✅ Dashboard connected to backend successfully!");
-					console.log("Connected to:", backendWS);
-					setLogs((prev) => [...prev, "[SYSTEM] Connected to backend"]);
-					setWsConnected(true);
-
-					// Send heartbeat every 30 seconds to keep connection alive
-					const heartbeatInterval = setInterval(() => {
-						if (ws.readyState === WebSocket.OPEN) {
-							ws.send(JSON.stringify({ type: "DASHBOARD_HEARTBEAT" }));
-						} else {
-							clearInterval(heartbeatInterval);
+				ws.onopen = async () => {
+					try {
+						const token = await getToken({ skipCache: true });
+						if (!token || disposed || ws.readyState !== WebSocket.OPEN) {
+							ws.close(1008, "Authentication required");
+							return;
 						}
-					}, 30000);
-
-					// Store interval for cleanup
-					(ws as any).heartbeatInterval = heartbeatInterval;
+						ws.send(JSON.stringify({ type: "AUTH_USER", token }));
+					} catch (error) {
+						console.error("Could not get Clerk session token:", error);
+						ws.close(1008, "Authentication required");
+					}
 				};
 
 				ws.onmessage = (event) => {
 					const data = JSON.parse(event.data);
 					console.log("Message received:", data.type, data);
+
+					if (data.type === "USER_AUTH_SUCCESS") {
+						setWsConnected(true);
+						setLogs((prev) => [...prev, "[SYSTEM] Connected to backend"]);
+						heartbeatInterval = setInterval(() => {
+							if (ws.readyState === WebSocket.OPEN) {
+								ws.send(JSON.stringify({ type: "DASHBOARD_HEARTBEAT" }));
+							}
+						}, 30000);
+						authRefreshInterval = setInterval(async () => {
+							try {
+								const token = await getToken({ skipCache: true });
+								if (!token) throw new Error("No active Clerk session");
+								if (ws.readyState === WebSocket.OPEN) {
+									ws.send(JSON.stringify({ type: "AUTH_USER", token }));
+								}
+							} catch (error) {
+								console.error("Could not refresh Clerk session:", error);
+								ws.close(4001, "Session refresh failed");
+							}
+						}, 45000);
+						return;
+					}
 
 					if (data.type === "DEVICES") {
 						console.log("Devices received:", data.devices);
@@ -722,9 +746,19 @@ export default function Home() {
 					]);
 				};
 
-				ws.onclose = () => {
+				ws.onclose = (event) => {
+					clearInterval(heartbeatInterval);
+					clearInterval(authRefreshInterval);
+					heartbeatInterval = undefined;
+					authRefreshInterval = undefined;
 					console.log("⚠️ Dashboard WebSocket disconnected");
 					setWsConnected(false);
+					setDevices([]);
+					setSelectedDevice("");
+					if (disposed || event.code === 1008) {
+						if (!disposed) setLogs((prev) => [...prev, "[ERROR] Backend rejected authentication. Check Clerk configuration."]);
+						return;
+					}
 					setLogs((prev) => [
 						...prev,
 						"[SYSTEM] Disconnected from backend. Reconnecting in 5s...",
@@ -748,16 +782,13 @@ export default function Home() {
 		connect();
 
 		return () => {
+			disposed = true;
 			if (reconnectTimeout) clearTimeout(reconnectTimeout);
-			if (wsRef.current) {
-				// Clear heartbeat interval
-				if ((wsRef.current as any).heartbeatInterval) {
-					clearInterval((wsRef.current as any).heartbeatInterval);
-				}
-				wsRef.current.close();
-			}
+			clearInterval(heartbeatInterval);
+			clearInterval(authRefreshInterval);
+			wsRef.current?.close();
 		};
-	}, []);
+	}, [getToken, isLoaded, isSignedIn]);
 
 	// Auto-scroll when logs update (unless user scrolled up)
 	useEffect(() => {
@@ -867,6 +898,7 @@ export default function Home() {
 
 					{/* Desktop Navigation */}
 					<div className="hidden md:flex items-center gap-4">
+						<UserButton />
 						<a
 							href="/setup"
 							className="px-6 py-3 bg-white/10 hover:bg-white/15 border border-white/20 rounded-2xl text-sm tracking-[0.1em] text-white/90 hover:text-white transition-all duration-200">
@@ -890,6 +922,7 @@ export default function Home() {
 					</div>
 
 					{/* Mobile Menu Button */}
+					<div className="md:hidden ml-auto mr-4"><UserButton /></div>
 					<motion.button
 						onClick={() => setShowMobileMenu(!showMobileMenu)}
 						className="md:hidden p-2 hover:bg-white/5 rounded-lg transition-colors duration-200"

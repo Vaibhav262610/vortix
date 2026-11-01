@@ -1,10 +1,16 @@
+require('dotenv').config();
 const WebSocket = require("ws");
+const { verifyToken } = require('@clerk/backend');
 const http = require("http");
 const readline = require("readline");
 const axios = require("axios");
 const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
+
+if (!/^sk_(test|live)_/.test(process.env.CLERK_SECRET_KEY || '') && !process.env.CLERK_JWT_KEY) {
+  throw new Error('Configure CLERK_SECRET_KEY (sk_test_ or sk_live_) or CLERK_JWT_KEY');
+}
 
 // Use environment PORT for cloud deployment, fallback to 8080 for local
 const PORT = process.env.PORT || 8080;
@@ -71,11 +77,63 @@ wss.on("connection", (ws, req) => {
   // ===== DASHBOARD CONNECTION =====
   if (clientType === "dashboard") {
     ws.authenticatedDevices = new Set(); // Track which devices this dashboard can access
-    dashboardClients.add(ws);
-    console.log("Dashboard connected");
+    ws.userId = null;
+    let sessionExpiryTimer;
 
     ws.on("message", async (message) => {
-      const data = JSON.parse(message);
+      let data;
+      try {
+        data = JSON.parse(message);
+      } catch {
+        ws.close(1008, 'Invalid message');
+        return;
+      }
+
+      // A dashboard must present a verified Clerk session before any device operation.
+      // Refreshing the same user's session keeps device unlocks intact.
+      if (data.type === 'AUTH_USER') {
+        if (typeof data.token !== 'string') {
+          ws.close(1008, 'Authentication required');
+          return;
+        }
+
+        try {
+          const authorizedParties = process.env.CLERK_AUTHORIZED_PARTIES
+            ?.split(',').map(origin => origin.trim()).filter(Boolean);
+          const claims = await verifyToken(data.token, {
+            ...(process.env.CLERK_SECRET_KEY ? { secretKey: process.env.CLERK_SECRET_KEY } : {}),
+            ...(process.env.CLERK_JWT_KEY ? { jwtKey: process.env.CLERK_JWT_KEY.replace(/\\n/g, '\n') } : {}),
+            ...(authorizedParties?.length ? { authorizedParties } : {}),
+          });
+          if (ws.readyState !== WebSocket.OPEN) return;
+          if (ws.userId && ws.userId !== claims.sub) {
+            ws.close(1008, 'Session user changed');
+            return;
+          }
+
+          const firstAuthentication = !ws.userId;
+          ws.userId = claims.sub;
+          clearTimeout(sessionExpiryTimer);
+          sessionExpiryTimer = setTimeout(() => ws.close(4001, 'Session expired'),
+            Math.max(0, claims.exp * 1000 - Date.now()));
+          if (firstAuthentication) {
+            dashboardClients.add(ws);
+            ws.send(JSON.stringify({ type: 'USER_AUTH_SUCCESS' }));
+            broadcastDevicesToDashboard(ws);
+            console.log('Dashboard authenticated');
+          } else {
+            ws.send(JSON.stringify({ type: 'USER_AUTH_REFRESHED' }));
+          }
+        } catch (error) {
+          console.warn('Dashboard authentication failed:', error.message);
+          ws.close(1008, 'Invalid session');
+        }
+        return;
+      }
+      if (!ws.userId) {
+        ws.close(1008, 'Authentication required');
+        return;
+      }
 
       // Dashboard authenticates to view a specific device
       if (data.type === "AUTH_DEVICE") {
@@ -492,6 +550,7 @@ wss.on("connection", (ws, req) => {
     });
 
     ws.on("close", () => {
+      clearTimeout(sessionExpiryTimer);
       dashboardClients.delete(ws);
 
       // Clean up screen share sessions
@@ -514,8 +573,6 @@ wss.on("connection", (ws, req) => {
       console.log("Dashboard disconnected");
     });
 
-    // Send list of all devices (without sensitive info)
-    broadcastDevicesToDashboard(ws);
     return;
   }
 

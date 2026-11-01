@@ -2,7 +2,7 @@
 
 import { SignIn, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import Link from "next/link";
 
 export default function AuthPage() {
@@ -11,7 +11,7 @@ export default function AuthPage() {
 
 	useEffect(() => {
 		if (isLoaded && isSignedIn) {
-			router.push("/dashboard");
+			router.replace("/dashboard");
 		}
 	}, [isSignedIn, isLoaded, router]);
 
@@ -62,10 +62,11 @@ export default function AuthPage() {
 
 					{/* Clerk Auth Component */}
 					<div className="flex justify-center">
+						<Suspense fallback={null}>
 						<SignIn
 							path="/auth"
 							routing="path"
-							signUpUrl="/auth/sign-up"
+							signUpUrl="/sign-up"
 							forceRedirectUrl="/dashboard"
 							fallbackRedirectUrl="/dashboard"
 							appearance={{
@@ -75,6 +76,7 @@ export default function AuthPage() {
 								},
 							}}
 						/>
+						</Suspense>
 					</div>
 
 					{/* Features */}

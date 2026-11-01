@@ -13,6 +13,11 @@ WebSocket server for coordinating devices and dashboard.
 ## Environment Variables
 
 - `PORT` - Server port (default: 8080)
+- `CLERK_SECRET_KEY` - Clerk secret key (`sk_test_...` or `sk_live_...`), from the same Clerk application as the dashboard
+- `CLERK_JWT_KEY` - Optional Clerk JWT public key for local token verification (can be used instead of the secret key)
+- `CLERK_AUTHORIZED_PARTIES` - Optional comma-separated dashboard origins (recommended in production)
+
+Copy `.env.example` to `.env` for local development. The active `server.js` loads this file. Dashboard connections must send an `AUTH_USER` message containing a Clerk session token before accessing devices. Device passwords are still required to unlock individual devices.
 
 ## Local Development
 
@@ -54,7 +59,7 @@ git push heroku main
 **Agent Connection**
 
 ```
-ws://backend-url?token=device-hostname
+ws://backend-url?token=device-hostname:password
 ```
 
 **Dashboard Connection**
@@ -62,6 +67,8 @@ ws://backend-url?token=device-hostname
 ```
 ws://backend-url?type=dashboard
 ```
+
+The dashboard must send `{ "type": "AUTH_USER", "token": "<Clerk session JWT>" }` after connecting.
 
 ## Message Types
 
