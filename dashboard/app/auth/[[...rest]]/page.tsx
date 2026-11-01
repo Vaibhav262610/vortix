@@ -63,7 +63,7 @@ export default function AuthPage() {
 					{/* Clerk Auth Component */}
 					<div className="flex justify-center">
 						<Suspense fallback={null}>
-						<SignIn
+							<SignIn
 							path="/auth"
 							routing="path"
 							signUpUrl="/sign-up"
@@ -72,10 +72,10 @@ export default function AuthPage() {
 							appearance={{
 								elements: {
 									rootBox: "w-full",
-									card: "bg-transparent shadow-none",
+									card: "border border-slate-200 shadow-2xl",
 								},
 							}}
-						/>
+							/>
 						</Suspense>
 					</div>
 

@@ -16,8 +16,11 @@ WebSocket server for coordinating devices and dashboard.
 - `CLERK_SECRET_KEY` - Clerk secret key (`sk_test_...` or `sk_live_...`), from the same Clerk application as the dashboard
 - `CLERK_JWT_KEY` - Optional Clerk JWT public key for local token verification (can be used instead of the secret key)
 - `CLERK_AUTHORIZED_PARTIES` - Optional comma-separated dashboard origins (recommended in production)
+- `GROQ_API_KEY` - Groq key used by AI planning; set this on the backend service in Render and redeploy
 
 Copy `.env.example` to `.env` for local development. The active `server.js` loads this file. Dashboard connections must send an `AUTH_USER` message containing a Clerk session token before accessing devices. Device passwords are still required to unlock individual devices.
+
+AI planning uses `openai/gpt-oss-120b` through Groq. The backend's `GROQ_API_KEY` takes precedence over a personal key saved in the dashboard's Settings page. Without a Groq key, Ollama is available only for local development.
 
 ## Local Development
 

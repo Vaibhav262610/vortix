@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, JSX } from "react";
 import { motion } from "framer-motion";
-import { useAuth, UserButton } from "@clerk/nextjs";
+import { useAuth } from "@clerk/nextjs";
 import { quickCommands } from "../../quickCommands";
 import { SystemStatsWidget } from "../../components/SystemStatsWidget";
 import { RecentCommandsWidget } from "../../components/RecentCommandsWidget";
@@ -648,6 +648,7 @@ export default function Home() {
 					if (data.type === "PLAN_ERROR") {
 						console.error("Plan error:", data.error);
 						setIsPlanning(false);
+						setIsExecuting(false);
 						setLogs((prev) => [...prev, `[ERROR] ${data.error}`]);
 						alert(
 							`AI Planning Error: ${data.error}\n\nPlease enter commands directly instead.`,
@@ -898,7 +899,6 @@ export default function Home() {
 
 					{/* Desktop Navigation */}
 					<div className="hidden md:flex items-center gap-4">
-						<UserButton />
 						<a
 							href="/setup"
 							className="px-6 py-3 bg-white/10 hover:bg-white/15 border border-white/20 rounded-2xl text-sm tracking-[0.1em] text-white/90 hover:text-white transition-all duration-200">
@@ -922,7 +922,6 @@ export default function Home() {
 					</div>
 
 					{/* Mobile Menu Button */}
-					<div className="md:hidden ml-auto mr-4"><UserButton /></div>
 					<motion.button
 						onClick={() => setShowMobileMenu(!showMobileMenu)}
 						className="md:hidden p-2 hover:bg-white/5 rounded-lg transition-colors duration-200"

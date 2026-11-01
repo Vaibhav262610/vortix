@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { UserButton } from "@clerk/nextjs";
 
 export default function SettingsPage() {
 	const [apiKey, setApiKey] = useState("");
@@ -11,9 +12,9 @@ export default function SettingsPage() {
 	useEffect(() => {
 		// Load saved API key from localStorage
 		const savedKey = localStorage.getItem("groq_api_key");
-		if (savedKey) {
-			setApiKey(savedKey);
-		}
+		if (!savedKey) return;
+		const timer = window.setTimeout(() => setApiKey(savedKey), 0);
+		return () => window.clearTimeout(timer);
 	}, []);
 
 	const handleSave = () => {
@@ -40,11 +41,14 @@ export default function SettingsPage() {
 						<h1 className="text-2xl font-bold text-white">Vortix</h1>
 						<p className="text-xs text-white/50">Remote OS Control</p>
 					</div>
-					<Link
-						href="/"
+						<div className="flex items-center gap-4">
+						<UserButton />
+						<Link
+							href="/dashboard"
 						className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/80 hover:text-white transition">
 						Back to Dashboard
 					</Link>
+						</div>
 				</div>
 			</div>
 
@@ -80,9 +84,8 @@ export default function SettingsPage() {
 								Groq API Key
 							</h3>
 							<p className="text-white/60 text-sm">
-								Add your personal Groq API key for AI-powered command planning.
-								This key is stored locally in your browser and never sent to our
-								servers.
+								The backend uses its Groq API key for AI planning. You only need a
+								personal key if the backend has no key configured.
 							</p>
 						</div>
 					</div>
@@ -142,7 +145,7 @@ export default function SettingsPage() {
 										console.groq.com/keys
 									</a>
 								</li>
-								<li>Sign up or log in (it's free!)</li>
+								<li>Sign up or log in (it&apos;s free!)</li>
 								<li>Create a new API key</li>
 								<li>Copy and paste it here</li>
 							</ol>
@@ -183,9 +186,9 @@ export default function SettingsPage() {
 				{/* Privacy Notice */}
 				<div className="mt-6 p-4 rounded-lg bg-white/5 border border-white/10">
 					<p className="text-xs text-white/50 text-center">
-						Your API key is stored locally in your browser and is never sent to
-						Vortix servers. It's only used for direct communication with Groq
-						API.
+						A personal key is stored in this browser and sent to the Vortix
+						backend when you request a plan. The backend&apos;s Groq key takes
+						precedence when configured.
 					</p>
 				</div>
 			</div>

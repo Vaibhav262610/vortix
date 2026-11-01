@@ -4,9 +4,8 @@ const { verifyToken } = require('@clerk/backend');
 const http = require("http");
 const readline = require("readline");
 const axios = require("axios");
-const os = require("os");
-const path = require("path");
 const crypto = require("crypto");
+const { selectGroqKey, generateGroqPlan } = require('./lib/groq-planning');
 
 if (!/^sk_(test|live)_/.test(process.env.CLERK_SECRET_KEY || '') && !process.env.CLERK_JWT_KEY) {
   throw new Error('Configure CLERK_SECRET_KEY (sk_test_ or sk_live_) or CLERK_JWT_KEY');
@@ -283,7 +282,14 @@ wss.on("connection", (ws, req) => {
         }
 
         const targetDevice = devices.get(deviceId);
-        if (!targetDevice || targetDevice.status !== "online") return;
+        if (!targetDevice || targetDevice.status !== "online") {
+          ws.send(JSON.stringify({
+            type: "PLAN_ERROR",
+            deviceName: data.deviceName,
+            error: "Device is offline. Reconnect it and try again."
+          }));
+          return;
+        }
 
         try {
           const userApiKey = data.apiKey || null;
@@ -300,14 +306,10 @@ wss.on("connection", (ws, req) => {
             steps: plan.steps
           }));
         } catch (err) {
-          const errorMessage = err.message.includes("Ollama")
-            ? "AI planning is not available. Please enter commands directly."
-            : `AI planning error: ${err.message}`;
-
           ws.send(JSON.stringify({
             type: "PLAN_ERROR",
             deviceName: data.deviceName,
-            error: errorMessage
+            error: err.message
           }));
         }
       }
@@ -821,13 +823,13 @@ if (process.env.NODE_ENV !== 'production' && !process.env.RAILWAY_ENVIRONMENT) {
 }
 
 async function generatePlan(userInput, platform, userApiKey = null) {
-  const homeDir = os.homedir();
-  const desktopPath = path.join(homeDir, "Desktop");
-
   // Platform-specific command patterns
   const isWindows = platform === 'win32';
   const isMac = platform === 'darwin';
   const isLinux = platform === 'linux';
+  // Commands run on the agent, so use paths that expand on that device.
+  const homeDir = isWindows ? '%USERPROFILE%' : '$HOME';
+  const desktopPath = isWindows ? '%USERPROFILE%\\Desktop' : '$HOME/Desktop';
 
   let platformInstructions = '';
 
@@ -991,63 +993,22 @@ User Request: ${userInput}
 Return ONLY JSON with executable commands:
 `;
 
-  // Priority: user-provided API key > server environment variable > Ollama fallback
-  const GROQ_API_KEY = userApiKey || process.env.GROQ_API_KEY;
+  // The backend's Groq key takes precedence over an optional browser key.
+  const groqKey = selectGroqKey(process.env.GROQ_API_KEY, userApiKey);
 
-  if (GROQ_API_KEY) {
-    // Use Groq API (free cloud option)
-    console.log("Using Groq API for AI planning" + (userApiKey ? " (user-provided key)" : " (server key)"));
-
-    try {
-      const response = await axios.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-          model: "llama-3.3-70b-versatile",
-          messages: [
-            {
-              role: "user",
-              content: prompt
-            }
-          ],
-          temperature: 0
-        },
-        {
-          headers: {
-            "Authorization": `Bearer ${GROQ_API_KEY} `,
-            "Content-Type": "application/json"
-          },
-          timeout: 30000
-        }
-      );
-
-      const text = response.data.choices[0].message.content.trim();
-      console.log("Groq AI output:", text);
-
-      // Extract JSON safely
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-
-      if (!jsonMatch) {
-        throw new Error("No valid JSON found in AI output");
-      }
-
-      return JSON.parse(jsonMatch[0]);
-    } catch (error) {
-      console.error("Groq API error:", error.message);
-
-      if (error.response?.status === 401) {
-        throw new Error("Invalid API key. Please check your Groq API key in Settings.");
-      }
-
-      throw new Error("AI planning failed. Please check your Groq API key or use direct commands.");
-    }
+  if (groqKey) {
+    return generateGroqPlan(prompt, groqKey);
   } else {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('GROQ_API_KEY is missing on the backend. Set it on Render and redeploy.');
+    }
     // Fallback to Ollama (local only)
     console.log("Using Ollama for AI planning (local only)");
     const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
 
     try {
       const response = await axios.post(
-        `${ollamaUrl} /api/generate`,
+        `${ollamaUrl.replace(/\/$/, '')}/api/generate`,
         {
           model: "qwen2.5:7b",
           prompt: prompt,
