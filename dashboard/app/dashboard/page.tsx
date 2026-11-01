@@ -1831,242 +1831,220 @@ export default function Home() {
 							</button>
 						</div>
 
-					{/* Main: command + logs */}
-					<div className="flex flex-col gap-6">
-						{/* Command — glass bar */}
-						<div className="hidden md:block glass rounded-2xl p-5 sm:p-6">
-							<div className="flex items-center justify-between mb-3">
-								<p className="text-xs font-medium uppercase tracking-widest text-white/45">
-									Send Command
-								</p>
-								<div className="flex items-center gap-2">
-									{selectedDevice && (
-										<div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-emerald-600/10 border border-emerald-600/30">
-											<div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-											<span className="text-xs text-emerald-400 font-medium">
-												{selectedDevice}
-											</span>
-										</div>
-									)}
+						{/* Main: command + logs */}
+						<div className="flex flex-col gap-6">
+							{/* Command — glass bar */}
+							<div className="hidden md:block glass rounded-2xl p-5 sm:p-6">
+								<div className="flex items-center justify-between mb-3">
+									<p className="text-xs font-medium uppercase tracking-widest text-white/45">
+										Send Command
+									</p>
+									<div className="flex items-center gap-2">
+										{selectedDevice && (
+											<div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-emerald-600/10 border border-emerald-600/30">
+												<div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+												<span className="text-xs text-emerald-400 font-medium">
+													{selectedDevice}
+												</span>
+											</div>
+										)}
+										<button
+											onClick={() => setShowQuickCommands(true)}
+											className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 transition text-purple-300 text-xs font-medium">
+											<svg
+												className="w-3.5 h-3.5"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24">
+												<path
+													strokeLinecap="round"
+													strokeLinejoin="round"
+													strokeWidth={2}
+													d="M13 10V3L4 14h7v7l9-11h-7z"
+												/>
+											</svg>
+											Quick Commands
+										</button>
+									</div>
+								</div>
+								<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+									<div className="flex-1 min-w-0">
+										<input
+											value={command}
+											onChange={(e) => setCommand(e.target.value)}
+											onKeyDown={(e) => e.key === "Enter" && sendCommand()}
+											placeholder={
+												selectedDevice
+													? "Type a command or describe what you want to do..."
+													: "Select a device first..."
+											}
+											disabled={!selectedDevice}
+											className={`w-full rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 border border-white/10 bg-black/40 ${
+												!selectedDevice ? "opacity-50 cursor-not-allowed" : ""
+											}`}
+										/>
+									</div>
 									<button
-										onClick={() => setShowQuickCommands(true)}
-										className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 transition text-purple-300 text-xs font-medium">
-										<svg
-											className="w-3.5 h-3.5"
-											fill="none"
-											stroke="currentColor"
-											viewBox="0 0 24 24">
-											<path
-												strokeLinecap="round"
-												strokeLinejoin="round"
-												strokeWidth={2}
-												d="M13 10V3L4 14h7v7l9-11h-7z"
-											/>
-										</svg>
-										Quick Commands
-									</button>
-								</div>
-							</div>
-							<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-								<div className="flex-1 min-w-0">
-									<input
-										value={command}
-										onChange={(e) => setCommand(e.target.value)}
-										onKeyDown={(e) => e.key === "Enter" && sendCommand()}
-										placeholder={
-											selectedDevice
-												? "Type a command or describe what you want to do..."
-												: "Select a device first..."
-										}
-										disabled={!selectedDevice}
-										className={`w-full rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 border border-white/10 bg-black/40 ${
-											!selectedDevice ? "opacity-50 cursor-not-allowed" : ""
-										}`}
-									/>
-								</div>
-								<button
-									type="button"
-									onClick={sendCommand}
-									disabled={isExecuting || isPlanning || !selectedDevice}
-									className={`rounded-xl px-6 py-3 text-sm font-medium transition focus:outline-none focus:ring-2 sm:shrink-0 whitespace-nowrap ${
-										isExecuting || isPlanning
-											? "cursor-not-allowed bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-											: !selectedDevice
-												? "cursor-not-allowed bg-white/5 text-white/40 border border-white/10"
-												: "bg-emerald-600 hover:bg-emerald-700 text-white"
-									}`}>
-									{isExecuting
-										? "Executing..."
-										: isPlanning
-											? "Planning..."
-											: "Send Command"}
-								</button>
-							</div>
-							{!selectedDevice && (
-								<p className="mt-3 text-xs text-orange-400/70">
-									Please select a device first
-								</p>
-							)}
-							{selectedDevice && (
-								<p className="mt-3 text-xs text-white/40">
-									💡 Tip: Press{" "}
-									<kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 font-mono text-xs">
-										Ctrl+Enter
-									</kbd>{" "}
-									to send,{" "}
-									<kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 font-mono text-xs">
-										Ctrl+K
-									</kbd>{" "}
-									for quick commands
-								</p>
-							)}
-						</div>
-
-						{/* Logs — glass window */}
-						<div className="glass rounded-2xl overflow-hidden flex flex-col h-[500px]">
-							<div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2.5 flex-shrink-0">
-								<div className="flex gap-1.5">
-									<span className="h-2 w-2 rounded-full bg-white/20" />
-									<span className="h-2 w-2 rounded-full bg-white/20" />
-									<span className="h-2 w-2 rounded-full bg-white/20" />
-								</div>
-								<span className="text-xs font-medium text-white/50">Logs</span>
-								<div className="ml-auto flex items-center gap-2">
-									<button
-										onClick={() => setAutoScroll((s) => !s)}
-										className={`text-xs px-2 py-1 rounded-md border ${
-											autoScroll
-												? "bg-white/5 border-white/10 text-white"
-												: "bg-transparent border-white/10 text-white/60"
+										type="button"
+										onClick={sendCommand}
+										disabled={isExecuting || isPlanning || !selectedDevice}
+										className={`rounded-xl px-6 py-3 text-sm font-medium transition focus:outline-none focus:ring-2 sm:shrink-0 whitespace-nowrap ${
+											isExecuting || isPlanning
+												? "cursor-not-allowed bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+												: !selectedDevice
+													? "cursor-not-allowed bg-white/5 text-white/40 border border-white/10"
+													: "bg-emerald-600 hover:bg-emerald-700 text-white"
 										}`}>
-										{autoScroll ? "Auto-scroll: ON" : "Auto-scroll: OFF"}
-									</button>
-									<button
-										onClick={() => setLogs([])}
-										className="text-xs px-2 py-1 rounded-md border border-white/10 text-white/60 hover:text-white hover:bg-white/5 transition">
-										Clear
+										{isExecuting
+											? "Executing..."
+											: isPlanning
+												? "Planning..."
+												: "Send Command"}
 									</button>
 								</div>
-							</div>
-							<div
-								ref={logsRef}
-								onScroll={() => {
-									const el = logsRef.current;
-									if (!el) return;
-									const atBottom =
-										el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-									if (atBottom !== autoScroll) setAutoScroll(atBottom);
-								}}
-								className="flex-1 overflow-y-auto p-3 font-mono text-[13px] leading-relaxed text-white/75">
-								{logs.length === 0 ? (
-									<p className="text-white/35">No entries yet.</p>
-								) : (
-									logs.map((log, index) => (
-										<div
-											key={index}
-											className="border-l-2 border-transparent py-0.5 pl-3 hover:border-white/20 hover:bg-white/[0.03]">
-											{log}
-										</div>
-									))
+								{!selectedDevice && (
+									<p className="mt-3 text-xs text-orange-400/70">
+										Please select a device first
+									</p>
 								)}
+								{selectedDevice && (
+									<p className="mt-3 text-xs text-white/40">
+										💡 Tip: Press{" "}
+										<kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 font-mono text-xs">
+											Ctrl+Enter
+										</kbd>{" "}
+										to send,{" "}
+										<kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white/60 font-mono text-xs">
+											Ctrl+K
+										</kbd>{" "}
+										for quick commands
+									</p>
+								)}
+							</div>
+
+							{/* Logs — glass window */}
+							<div className="glass rounded-2xl overflow-hidden flex flex-col h-[500px]">
+								<div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2.5 flex-shrink-0">
+									<div className="flex gap-1.5">
+										<span className="h-2 w-2 rounded-full bg-white/20" />
+										<span className="h-2 w-2 rounded-full bg-white/20" />
+										<span className="h-2 w-2 rounded-full bg-white/20" />
+									</div>
+									<span className="text-xs font-medium text-white/50">
+										Logs
+									</span>
+									<div className="ml-auto flex items-center gap-2">
+										<button
+											onClick={() => setAutoScroll((s) => !s)}
+											className={`text-xs px-2 py-1 rounded-md border ${
+												autoScroll
+													? "bg-white/5 border-white/10 text-white"
+													: "bg-transparent border-white/10 text-white/60"
+											}`}>
+											{autoScroll ? "Auto-scroll: ON" : "Auto-scroll: OFF"}
+										</button>
+										<button
+											onClick={() => setLogs([])}
+											className="text-xs px-2 py-1 rounded-md border border-white/10 text-white/60 hover:text-white hover:bg-white/5 transition">
+											Clear
+										</button>
+									</div>
+								</div>
+								<div
+									ref={logsRef}
+									onScroll={() => {
+										const el = logsRef.current;
+										if (!el) return;
+										const atBottom =
+											el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+										if (atBottom !== autoScroll) setAutoScroll(atBottom);
+									}}
+									className="flex-1 overflow-y-auto p-3 font-mono text-[13px] leading-relaxed text-white/75">
+									{logs.length === 0 ? (
+										<p className="text-white/35">No entries yet.</p>
+									) : (
+										logs.map((log, index) => (
+											<div
+												key={index}
+												className="border-l-2 border-transparent py-0.5 pl-3 hover:border-white/20 hover:bg-white/[0.03]">
+												{log}
+											</div>
+										))
+									)}
+								</div>
 							</div>
 						</div>
 					</div>
 				</div>
-			</div>
 
-			{/* File Transfer Modal */}
-			{showFileTransfer && (
-				<FileTransfer
-					key={selectedDevice}
-					deviceName={selectedDevice}
-					ws={wsRef.current}
-					onClose={() => setShowFileTransfer(false)}
-					fileListData={fileListData}
-				/>
-			)}
-
-			{/* Multi-Device Selector Modal */}
-			{showMultiDevice && (
-				<MultiDeviceSelector
-					devices={devices}
-					onExecute={handleMultiDeviceExecute}
-					onClose={() => setShowMultiDevice(false)}
-				/>
-			)}
-
-			{/* Widgets Sidebar - Fixed Right (Hidden on mobile, toggle on desktop) */}
-			<div
-				className={`fixed right-0 top-20 bottom-0 w-80 backdrop-blur-xl border-l p-4 space-y-4 overflow-y-auto z-20 bg-black/40 border-white/10 transition-transform duration-300 ${
-					showWidgetsSidebar ? "translate-x-0" : "translate-x-full"
-				} lg:translate-x-0`}>
-				<button
-					onClick={() => setShowWidgetsSidebar(false)}
-					className="lg:hidden absolute top-4 right-4 h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition">
-					<svg
-						className="w-5 h-5 text-white"
-						fill="none"
-						stroke="currentColor"
-						viewBox="0 0 24 24">
-						<path
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							strokeWidth={2}
-							d="M6 18L18 6M6 6l12 12"
-						/>
-					</svg>
-				</button>
-				<SystemStatsWidget
-					key={wsConnected ? "connected" : "disconnected"}
-					deviceName={selectedDevice}
-					ws={wsRef.current}
-				/>
-				<DeviceStatusWidget
-					devices={devices}
-					selectedDevice={selectedDevice}
-					onDeviceSelect={(deviceName) => {
-						const device = devices.find((d) => d.deviceName === deviceName);
-						if (device) handleDeviceClick(device);
-					}}
-				/>
-				<RecentCommandsWidget
-					commands={commandHistory}
-					onCommandClick={(cmd) => {
-						setCommand(cmd);
-					}}
-				/>
-			</div>
-
-			{/* Mobile Widgets Toggle Button */}
-			<button
-				onClick={() => setShowWidgetsSidebar(true)}
-				className="lg:hidden fixed bottom-24 right-4 h-14 w-14 rounded-full bg-blue-600 hover:bg-blue-700 shadow-lg flex items-center justify-center transition z-30">
-				<svg
-					className="w-6 h-6 text-white"
-					fill="none"
-					stroke="currentColor"
-					viewBox="0 0 24 24">
-					<path
-						strokeLinecap="round"
-						strokeLinejoin="round"
-						strokeWidth={2}
-						d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+				{/* File Transfer Modal */}
+				{showFileTransfer && (
+					<FileTransfer
+						key={selectedDevice}
+						deviceName={selectedDevice}
+						ws={wsRef.current}
+						onClose={() => setShowFileTransfer(false)}
+						fileListData={fileListData}
 					/>
-				</svg>
-			</button>
+				)}
 
-			{/* Feature Buttons - Fixed Bottom Left */}
-			<div className="fixed bottom-6 left-6 flex gap-3 z-30">
+				{/* Multi-Device Selector Modal */}
+				{showMultiDevice && (
+					<MultiDeviceSelector
+						devices={devices}
+						onExecute={handleMultiDeviceExecute}
+						onClose={() => setShowMultiDevice(false)}
+					/>
+				)}
+
+				{/* Widgets Sidebar - Fixed Right (Hidden on mobile, toggle on desktop) */}
+				<div
+					className={`fixed right-0 top-20 bottom-0 w-80 backdrop-blur-xl border-l p-4 space-y-4 overflow-y-auto z-20 bg-black/40 border-white/10 transition-transform duration-300 ${
+						showWidgetsSidebar ? "translate-x-0" : "translate-x-full"
+					} lg:translate-x-0`}>
+					<button
+						onClick={() => setShowWidgetsSidebar(false)}
+						className="lg:hidden absolute top-4 right-4 h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition">
+						<svg
+							className="w-5 h-5 text-white"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24">
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								strokeWidth={2}
+								d="M6 18L18 6M6 6l12 12"
+							/>
+						</svg>
+					</button>
+					<SystemStatsWidget
+						key={wsConnected ? "connected" : "disconnected"}
+						deviceName={selectedDevice}
+						ws={wsRef.current}
+					/>
+					<DeviceStatusWidget
+						devices={devices}
+						selectedDevice={selectedDevice}
+						onDeviceSelect={(deviceName) => {
+							const device = devices.find((d) => d.deviceName === deviceName);
+							if (device) handleDeviceClick(device);
+						}}
+					/>
+					<RecentCommandsWidget
+						commands={commandHistory}
+						onCommandClick={(cmd) => {
+							setCommand(cmd);
+						}}
+					/>
+				</div>
+
+				{/* Mobile Widgets Toggle Button */}
 				<button
-					onClick={() => setShowMultiDevice(true)}
-					disabled={
-						devices.filter((d) => d.authenticated && d.status === "online")
-							.length < 2
-					}
-					className="px-4 py-3 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/50 text-purple-400 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg backdrop-blur-sm"
-					title="Execute command on multiple devices">
+					onClick={() => setShowWidgetsSidebar(true)}
+					className="lg:hidden fixed bottom-24 right-4 h-14 w-14 rounded-full bg-blue-600 hover:bg-blue-700 shadow-lg flex items-center justify-center transition z-30">
 					<svg
-						className="w-5 h-5"
+						className="w-6 h-6 text-white"
 						fill="none"
 						stroke="currentColor"
 						viewBox="0 0 24 24">
@@ -2074,28 +2052,53 @@ export default function Home() {
 							strokeLinecap="round"
 							strokeLinejoin="round"
 							strokeWidth={2}
-							d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+							d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
 						/>
 					</svg>
 				</button>
-				<button
-					onClick={() => setShowFileTransfer(true)}
-					disabled={!selectedDevice}
-					className="px-4 py-3 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/50 text-blue-400 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg backdrop-blur-sm"
-					title="Transfer files">
-					<svg
-						className="w-5 h-5"
-						fill="none"
-						stroke="currentColor"
-						viewBox="0 0 24 24">
-						<path
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							strokeWidth={2}
-							d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-						/>
-					</svg>
-				</button>
+
+				{/* Feature Buttons - Fixed Bottom Left */}
+				<div className="fixed bottom-6 left-6 flex gap-3 z-30">
+					<button
+						onClick={() => setShowMultiDevice(true)}
+						disabled={
+							devices.filter((d) => d.authenticated && d.status === "online")
+								.length < 2
+						}
+						className="px-4 py-3 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/50 text-purple-400 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg backdrop-blur-sm"
+						title="Execute command on multiple devices">
+						<svg
+							className="w-5 h-5"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24">
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								strokeWidth={2}
+								d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+							/>
+						</svg>
+					</button>
+					<button
+						onClick={() => setShowFileTransfer(true)}
+						disabled={!selectedDevice}
+						className="px-4 py-3 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/50 text-blue-400 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg backdrop-blur-sm"
+						title="Transfer files">
+						<svg
+							className="w-5 h-5"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24">
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								strokeWidth={2}
+								d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+							/>
+						</svg>
+					</button>
+				</div>
 			</div>
 		</div>
 	);

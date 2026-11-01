@@ -1,12 +1,11 @@
 "use client";
 
-import { SignIn, SignUp, useUser } from "@clerk/nextjs";
+import { SignIn, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
 
 export default function AuthPage() {
-	const [isSignUp, setIsSignUp] = useState(false);
 	const { isSignedIn, isLoaded } = useUser();
 	const router = useRouter();
 
@@ -56,47 +55,26 @@ export default function AuthPage() {
 					{/* Header */}
 					<div className="text-center mb-8">
 						<h1 className="text-4xl font-light mb-4 tracking-tight">
-							{isSignUp ? "Create Account" : "Welcome Back"}
+							Welcome Back
 						</h1>
-						<p className="text-white/60">
-							{isSignUp
-								? "Sign up to start controlling your devices"
-								: "Sign in to access your dashboard"}
-						</p>
+						<p className="text-white/60">Sign in to access your dashboard</p>
 					</div>
 
 					{/* Clerk Auth Component */}
 					<div className="flex justify-center">
-						{isSignUp ? (
-							<SignUp
-								appearance={{
-									elements: {
-										rootBox: "w-full",
-										card: "bg-transparent shadow-none",
-									},
-								}}
-							/>
-						) : (
-							<SignIn
-								appearance={{
-									elements: {
-										rootBox: "w-full",
-										card: "bg-transparent shadow-none",
-									},
-								}}
-							/>
-						)}
-					</div>
-
-					{/* Toggle between sign in and sign up */}
-					<div className="mt-6 text-center">
-						<button
-							onClick={() => setIsSignUp(!isSignUp)}
-							className="text-sm text-white/60 hover:text-white transition">
-							{isSignUp
-								? "Already have an account? Sign in"
-								: "Don't have an account? Sign up"}
-						</button>
+						<SignIn
+							path="/auth"
+							routing="path"
+							signUpUrl="/auth/sign-up"
+							afterSignInUrl="/dashboard"
+							afterSignUpUrl="/dashboard"
+							appearance={{
+								elements: {
+									rootBox: "w-full",
+									card: "bg-transparent shadow-none",
+								},
+							}}
+						/>
 					</div>
 
 					{/* Features */}
