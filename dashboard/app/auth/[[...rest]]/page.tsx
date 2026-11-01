@@ -66,8 +66,8 @@ export default function AuthPage() {
 							path="/auth"
 							routing="path"
 							signUpUrl="/auth/sign-up"
-							afterSignInUrl="/dashboard"
-							afterSignUpUrl="/dashboard"
+							forceRedirectUrl="/dashboard"
+							fallbackRedirectUrl="/dashboard"
 							appearance={{
 								elements: {
 									rootBox: "w-full",
