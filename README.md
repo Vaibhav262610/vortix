@@ -6,6 +6,8 @@ Storage Rescue can scan common user folders or accessible drives on an online de
 
 For Windows, download the [Vortix 1.2.12 installer](https://vortixai.vercel.app/downloads/VortixSetup-1.2.12.exe) on each computer you want to connect. Install Node.js first. The installer bundles the matching agent package, enables sign-in startup, and opens the tray app. On a new device, set its password in the tray, then add its computer name and password in the dashboard. The tray displays connection state and can pause, resume, start, or quit the agent. Closing its window leaves the tray app running. The device uses the shared hosted backend; it does not need its own server.
 
+The installer has a [SHA256 checksum](https://vortixai.vercel.app/downloads/VortixSetup-1.2.12.exe.sha256) for download verification.
+
 The npm registry currently serves `vortix@1.2.3`. To install this version from source instead, run `cd cli_vortix`, `npm pack`, `npm install -g ./vortix-1.2.12.tgz`, and `vortix enable-autostart` after cloning or pulling this repository. Run `vortix tray` to show the status window. Use `vortix disable-autostart` to remove the sign-in launcher.
 
 The dashboard puts voice commands first. Press **Speak a command**, talk for up to 20 seconds, then press **Stop and send voice**. The backend transcribes the recording with Groq Whisper; the recognized command follows the same plan or message-preview flow as typed commands. Vortix speaks short status replies when browser speech synthesis is available. Typed commands remain available. Recordings are processed in memory and are not saved to command history.

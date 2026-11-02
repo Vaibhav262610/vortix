@@ -37,6 +37,8 @@ vortix tray
 
 If you already have a clone, pull the latest changes instead of cloning again. The updated CLI uses the existing password saved for that computer account.
 
+To rebuild the Windows download from this repository, run `npm run build:tray` followed by `npm run build:installer` in `cli_vortix`. The installer embeds the package created by `npm pack` and writes the executable and SHA256 checksum to `dashboard/public/downloads`.
+
 ### Setup Your Device
 
 1. **Authenticate your device:**
