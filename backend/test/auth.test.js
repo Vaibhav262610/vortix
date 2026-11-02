@@ -191,6 +191,13 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
     await resumedResult;
     assert.deepEqual(unexpectedErrors, []);
 
+    const updateNeeded = waitForMessage(returningDashboard, 'STORAGE_SCAN_RESULT');
+    returningDashboard.send(JSON.stringify({ type: 'SCAN_STORAGE', deviceName: 'TEST' }));
+    assert.match((await updateNeeded).error, /Update and restart/);
+    const capabilityUpdate = waitForMessage(returningDashboard, 'DEVICES');
+    agent.send(JSON.stringify({ type: 'HEARTBEAT', platform: 'win32', capabilities: ['storage-scan-v1'] }));
+    assert.equal((await capabilityUpdate).devices[0].supportsStorageScan, true);
+
     const scanRequest = waitForMessage(agent, 'SCAN_STORAGE');
     returningDashboard.send(JSON.stringify({ type: 'SCAN_STORAGE', deviceName: 'TEST' }));
     const { requestId } = await scanRequest;

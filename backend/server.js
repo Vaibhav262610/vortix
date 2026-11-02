@@ -627,6 +627,10 @@ wss.on("connection", async (ws, req) => {
           ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: data.deviceName, error: 'Device is offline.' }));
           return;
         }
+        if (!targetDevice.supportsStorageScan) {
+          ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: data.deviceName, error: 'This agent does not support storage scans. Update and restart it on the device.' }));
+          return;
+        }
         const requestId = crypto.randomUUID();
         const timer = setTimeout(() => {
           pendingStorageScans.delete(requestId);
@@ -796,6 +800,7 @@ wss.on("connection", async (ws, req) => {
   }
   device.ws = ws;
   device.status = "online";
+  device.supportsStorageScan = false;
   device.lastSeen = Date.now();
 
   console.log(`Device connected: ${deviceName}`);
@@ -811,6 +816,11 @@ wss.on("connection", async (ws, req) => {
 
     if (data.type === "HEARTBEAT") {
       device.lastSeen = Date.now();
+      const supportsStorageScan = Array.isArray(data.capabilities) && data.capabilities.includes('storage-scan-v1');
+      if (device.supportsStorageScan !== supportsStorageScan) {
+        device.supportsStorageScan = supportsStorageScan;
+        broadcastDevices();
+      }
       // Update platform info if provided
       if (data.platform) {
         device.platform = data.platform;
@@ -1276,6 +1286,7 @@ async function broadcastDevicesToDashboard(dashboardWs) {
         deviceName: record.name,
         status: live?.status === 'online' ? 'online' : 'offline',
         authenticated: dashboardWs.authenticatedDevices.has(record.id),
+        supportsStorageScan: live?.supportsStorageScan === true,
         platform: live?.platform || record.platform,
       };
     });

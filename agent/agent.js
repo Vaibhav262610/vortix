@@ -154,7 +154,8 @@ function startAgent() {
       ws.send(
         JSON.stringify({
           type: "HEARTBEAT",
-          platform: PLATFORM
+          platform: PLATFORM,
+          capabilities: ['storage-scan-v1']
         })
       );
 
@@ -166,7 +167,8 @@ function startAgent() {
           ws.send(
             JSON.stringify({
               type: "HEARTBEAT",
-              platform: PLATFORM
+              platform: PLATFORM,
+              capabilities: ['storage-scan-v1']
             })
           );
         }

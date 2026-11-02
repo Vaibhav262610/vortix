@@ -7,7 +7,7 @@ real-time monitoring, and advanced device management.
 
 - **AI Command Generation** - Convert natural language to system commands
 - **Real-time System Monitoring** - CPU, Memory, and Disk usage tracking
-- **Screen Sharing** - Live desktop streaming capabilities
+- **Storage Rescue** - Find large files and folders on your own connected device
 - **File Transfer** - Upload and download files remotely
 - **Multi-device Control** - Execute commands across multiple devices
 - **Secure Authentication** - Password-protected device access
@@ -21,6 +21,18 @@ real-time monitoring, and advanced device management.
 ```bash
 npm install -g vortix
 ```
+
+The npm registry currently has version 1.2.3. For Storage Rescue, stop the old agent and install the newer CLI from this repository on the device:
+
+```bash
+git clone https://github.com/Vaibhav262610/vortix.git
+cd vortix/cli_vortix
+npm pack
+npm install -g ./vortix-1.2.4.tgz
+vortix start
+```
+
+If you already have a clone, pull the latest changes instead of cloning again. The updated CLI uses the existing password saved for that computer account.
 
 ### Setup Your Device
 

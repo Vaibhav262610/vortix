@@ -19,9 +19,10 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 ** (index + 1)).toFixed(1)} ${units[index]}`;
 }
 
-export function StorageRescue({ deviceName, online, ws, onBrowseFolder }: {
+export function StorageRescue({ deviceName, online, supported, ws, onBrowseFolder }: {
   deviceName: string;
   online: boolean;
+  supported: boolean;
   ws: WebSocket | null;
   onBrowseFolder: (path: string) => void;
 }) {
@@ -47,7 +48,7 @@ export function StorageRescue({ deviceName, online, ws, onBrowseFolder }: {
   }, [ws, deviceName]);
 
   const startScan = () => {
-    if (!deviceName || !online || ws?.readyState !== WebSocket.OPEN || loading) return;
+    if (!deviceName || !online || !supported || ws?.readyState !== WebSocket.OPEN || loading) return;
     setLoading(true);
     setError("");
     setResult(null);
@@ -60,13 +61,14 @@ export function StorageRescue({ deviceName, online, ws, onBrowseFolder }: {
         <h2 id="storage-rescue-title" className="mt-2 text-xl font-semibold">Find what is filling your storage</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">Scan Downloads, Desktop, Documents, Videos, and Pictures on the selected device. See large files and folders before deciding what to keep.</p>
       </div>
-      <button type="button" onClick={startScan} disabled={!deviceName || !online || !ws || loading}
+      <button type="button" onClick={startScan} disabled={!deviceName || !online || !supported || !ws || loading}
         className="rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-[#062014] transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40">
         {loading ? "Scanning…" : "Scan storage"}
       </button>
     </div>
     {!deviceName && <p className="mt-5 text-sm text-white/50">Select an online device to run a scan.</p>}
     {deviceName && !online && <p className="mt-5 text-sm text-white/50">This device is offline. Start its agent to scan storage.</p>}
+    {deviceName && online && !supported && <p className="mt-5 rounded-xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm leading-6 text-amber-100">The running agent is an older version without Storage Rescue. Update the <code>vortix</code> CLI on that computer and restart it. <a href="/setup#update-agent" className="font-semibold underline underline-offset-4">Update instructions</a></p>}
     {error && <p role="alert" className="mt-5 rounded-xl border border-red-400/25 bg-red-400/10 p-4 text-sm text-red-200">{error}</p>}
     {result && <div className="mt-6 space-y-6">
       <p className="text-xs text-white/50">Scanned {result.scannedFiles.toLocaleString()} files in {result.scannedDirectories.toLocaleString()} folders.

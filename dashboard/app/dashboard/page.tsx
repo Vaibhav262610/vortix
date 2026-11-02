@@ -16,6 +16,7 @@ type Device = {
 	deviceName: string;
 	status: string;
 	authenticated: boolean;
+	supportsStorageScan?: boolean;
 };
 
 type ApprovalDialog = {
@@ -2071,6 +2072,7 @@ export default function Home() {
 								key={`${selectedDevice}:${wsConnected}`}
 								deviceName={selectedDevice}
 								online={devices.some((device) => device.deviceName === selectedDevice && device.status === "online")}
+								supported={devices.some((device) => device.deviceName === selectedDevice && device.supportsStorageScan === true)}
 								ws={activeWs}
 								onBrowseFolder={openFileTransfer}
 							/>

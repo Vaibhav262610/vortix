@@ -4,6 +4,8 @@ Vortix is a remote device control project with a Next.js dashboard, a WebSocket 
 
 The Storage Rescue check scans common user folders on an online device and lists the largest files and folders. It is read-only, bounded to 10,000 files or 12 seconds, and lets the owner open a result in the file browser. Update the agent and backend together to use it.
 
+The npm registry currently serves `vortix@1.2.3`, which does not include Storage Rescue. If the device runs `vortix start` from a global npm installation, stop that process, clone or pull this repository on the device, then run `cd cli_vortix`, `npm pack`, `npm install -g ./vortix-1.2.4.tgz`, and `vortix start` in sequence. This installs the local CLI package version 1.2.4 with its dependencies and reads the existing password stored in that user's home directory. The dashboard shows an update notice when an older agent connects.
+
 ## Local setup (PowerShell)
 
 Use Node.js 20.19+, 22.12+, or 24+.
