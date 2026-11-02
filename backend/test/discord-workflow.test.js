@@ -23,3 +23,14 @@ test('screen verification uses a vision model and treats ambiguous screens as fa
   assert.deepEqual(await verifyDiscordScreen('open', 'claveb07', 'hello', 'aGVsbG8=', 'test-key', client),
     { ok: false, reason: 'Recipient not visible' });
 });
+
+test('recipient or message changed by AI is rejected', async () => {
+  const wrongRecipient = { post: async () => ({ data: { choices: [{ message: { content:
+    '{"recipient":"claven07","message":"hello"}' } }] } }) };
+  await assert.rejects(extractDiscordMessage('message claveb07 hello on Discord', 'test-key', wrongRecipient),
+    /username does not exactly match/);
+  const wrongMessage = { post: async () => ({ data: { choices: [{ message: { content:
+    '{"recipient":"claveb07","message":"hi"}' } }] } }) };
+  await assert.rejects(extractDiscordMessage('message claveb07 hello on Discord', 'test-key', wrongMessage),
+    /message does not exactly match/);
+});

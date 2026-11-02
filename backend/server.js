@@ -31,7 +31,7 @@ function requestDesktopAction(device, action, value) {
     const timer = setTimeout(() => {
       pendingDesktopActions.delete(requestId);
       reject(new Error('Desktop action timed out. Check that the agent is running in your signed-in desktop session.'));
-    }, 20000);
+    }, 30000);
     pendingDesktopActions.set(requestId, { deviceId: `device-${device.deviceName.toLowerCase()}`, resolve, reject, timer });
     device.ws.send(JSON.stringify({ type: 'DISCORD_ACTION', requestId, action, value }));
   });
@@ -437,7 +437,8 @@ wss.on("connection", async (ws, req) => {
             for (const [action, label] of [['find', 'Finding the recipient'], ['open', 'Opening the conversation'], ['draft', 'Preparing the message']]) {
               if (flow.cancelled) throw new Error('Workflow cancelled.');
               ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName, message: label }));
-              frame = await requestDesktopAction(device, action, action === 'find' ? flow.recipient : action === 'draft' ? flow.message : undefined);
+              frame = await requestDesktopAction(device, action,
+                action === 'find' || action === 'open' ? flow.recipient : action === 'draft' ? flow.message : undefined);
               if (flow.cancelled) throw new Error('Workflow cancelled.');
               const check = await verifyDiscordScreen(action, flow.recipient, flow.message, frame, process.env.GROQ_API_KEY);
               if (!check.ok) throw new Error(`${label} could not be verified: ${check.reason}`);

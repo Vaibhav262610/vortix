@@ -28,7 +28,7 @@ The npm registry currently has version 1.2.3. For all-drive scans and screen-awa
 git clone https://github.com/Vaibhav262610/vortix.git
 cd vortix/cli_vortix
 npm pack
-npm install -g ./vortix-1.2.5.tgz
+npm install -g ./vortix-1.2.6.tgz
 vortix start
 ```
 

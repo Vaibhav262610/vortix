@@ -1,8 +1,16 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { sendKeysText } = require('../desktop-control');
+const { discordAction, desktopErrorMessage } = require('../desktop-control');
 
-test('desktop text escapes SendKeys control characters', () => {
-  assert.equal(sendKeysText('hi + (you)'), 'hi {+} {(}you{)}');
-  assert.throws(() => sendKeysText('line one\nline two'), /Multiline/);
+test('desktop action validates text before sending input', async () => {
+  await assert.rejects(discordAction('draft', 'line one\nline two'), /Multiline/);
+  await assert.rejects(discordAction('find', 'bad username'), /Invalid recipient/);
+  await assert.rejects(discordAction('open'), /Invalid recipient/);
+});
+
+test('PowerShell CLIXML errors are reduced to a useful message', () => {
+  assert.equal(desktopErrorMessage('#< CLIXML<Obj S="progress"/><S S="Error">VORTIX_DESKTOP_ERROR:Discord did not open a visible window._x000D__x000A_</S>', {}),
+    'Discord did not open a visible window.');
+  assert.equal(desktopErrorMessage('#< CLIXML<Obj S="progress"/>', {}),
+    'Desktop automation failed. Open Discord on this computer and try again.');
 });

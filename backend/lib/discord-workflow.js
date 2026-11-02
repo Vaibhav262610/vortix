@@ -41,6 +41,13 @@ async function extractDiscordMessage(prompt, apiKey, client = axios) {
       /[\r\n]/.test(parsed.message)) {
     throw new Error('Could not identify one Discord username and a single-line message. Try “Message claveb07 hello on Discord”.');
   }
+  const promptTokens = prompt.match(/@?[a-z0-9_.]{2,32}/gi) || [];
+  if (!promptTokens.some(token => token.replace(/^@/, '').toLowerCase() === parsed.recipient.toLowerCase())) {
+    throw new Error('The extracted Discord username does not exactly match your request. Use the exact @username and try again.');
+  }
+  if (!prompt.includes(parsed.message)) {
+    throw new Error('The extracted message does not exactly match your request. Quote the exact text and try again.');
+  }
   return { recipient: parsed.recipient, message: parsed.message };
 }
 
@@ -50,7 +57,7 @@ async function verifyDiscordScreen(stage, recipient, message, frame, apiKey, cli
   }
   const criteria = {
     find: `Discord's Quick Switcher is visible. Its search is @${recipient}, and exactly one clearly matching direct-message result for that username is available.`,
-    open: `A Discord direct-message conversation with username ${recipient} is open. The visible header or other clear UI evidence must identify that exact recipient.`,
+    open: `A Discord direct-message conversation with username ${recipient} is open. The visible header or other clear UI evidence must identify that exact recipient. The message composer is empty.`,
     draft: `The Discord direct-message conversation is with username ${recipient}, and its unsent composer contains exactly this draft: ${JSON.stringify(message)}.`,
     send: `The Discord direct-message conversation is with username ${recipient}, and the latest visible sent message is exactly ${JSON.stringify(message)}.`,
   }[stage];
