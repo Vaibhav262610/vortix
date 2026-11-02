@@ -70,6 +70,7 @@ namespace VortixTray
         private readonly ToolStripMenuItem startItem;
         private readonly Timer timer;
         private readonly System.Threading.EventWaitHandle showSignal;
+        private readonly System.Threading.EventWaitHandle exitSignal;
         private string state = "starting";
         private bool exiting;
 
@@ -83,6 +84,8 @@ namespace VortixTray
             pipeName = pipe;
             showSignal = new System.Threading.EventWaitHandle(false,
                 System.Threading.EventResetMode.AutoReset, "Local\\VortixTrayShow-" + pipe);
+            exitSignal = new System.Threading.EventWaitHandle(false,
+                System.Threading.EventResetMode.AutoReset, "Local\\VortixTrayExit-" + pipe);
 
             window = new Form();
             window.Text = "Vortix Device";
@@ -181,12 +184,13 @@ namespace VortixTray
             MainForm = window;
             IntPtr unused = window.Handle;
             if (show) ShowStatus();
-            if (ReadAgent("status") == null) StartAgent();
+            if (ReadAgent("status") == null && HasPassword()) StartAgent();
             Poll();
             timer = new Timer();
             timer.Interval = 3000;
             timer.Tick += delegate
             {
+                if (exitSignal.WaitOne(0)) { Quit(); return; }
                 if (showSignal.WaitOne(0)) ShowStatus();
                 Poll();
             };
@@ -257,23 +261,26 @@ namespace VortixTray
         private void Poll()
         {
             string response = ReadAgent("status");
-            string next = Field(response, "state") ?? "stopped";
+            string next = Field(response, "state") ?? (HasPassword() ? "stopped" : "setup");
             if (next == state) return;
             state = next;
             Color accent = state == "online" ? Color.FromArgb(80, 220, 160)
-                : state == "paused" ? Color.FromArgb(245, 183, 83)
+                : state == "paused" || state == "setup" ? Color.FromArgb(245, 183, 83)
                 : Color.FromArgb(245, 110, 100);
             stateLabel.Text = "●  " + state.ToUpperInvariant();
             stateLabel.ForeColor = accent;
             detailLabel.Text = state == "online" ? "Connected to the Vortix backend"
                 : state == "paused" ? "Remote control is paused"
+                : state == "setup" ? "Set a password to connect this device"
                 : state == "connecting" ? "Connecting to the backend…"
                 : state == "stopped" ? "The device agent is not running"
                 : "Reconnecting to the backend…";
             pauseItem.Text = state == "paused" ? "Resume agent" : "Pause agent";
-            pauseItem.Enabled = state != "stopped";
-            startItem.Visible = state == "stopped";
+            pauseItem.Enabled = state != "stopped" && state != "setup";
+            startItem.Visible = state == "stopped" || state == "setup";
+            startItem.Text = state == "setup" ? "Set device password" : "Start agent";
             actionButton.Text = state == "paused" ? "Resume agent"
+                : state == "setup" ? "Set password"
                 : state == "stopped" ? "Start agent" : "Pause agent";
             notify.Text = "Vortix — " + state;
             Icon previous = notify.Icon;
@@ -283,6 +290,7 @@ namespace VortixTray
 
         private void ToggleAgent()
         {
+            if (state == "setup") { SetupPassword(); return; }
             if (state == "stopped") StartAgent();
             else ReadAgent(state == "paused" ? "resume" : "pause");
             Poll();
@@ -290,6 +298,7 @@ namespace VortixTray
 
         private void StartAgent()
         {
+            if (!HasPassword()) { SetupPassword(); return; }
             try
             {
                 var start = new ProcessStartInfo();
@@ -305,6 +314,78 @@ namespace VortixTray
             catch (Exception error)
             {
                 detailLabel.Text = "Could not start agent: " + error.Message;
+            }
+        }
+
+        private static bool HasPassword()
+        {
+            try
+            {
+                string config = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".vortix-config.json");
+                return File.Exists(config) && Regex.IsMatch(File.ReadAllText(config), "\"password\"\\s*:\\s*\"[^\"]+\"");
+            }
+            catch { return false; }
+        }
+
+        private void SetupPassword()
+        {
+            using (var dialog = new Form())
+            {
+                dialog.Text = "Secure this device";
+                dialog.ClientSize = new Size(360, 232);
+                dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dialog.MaximizeBox = false;
+                dialog.MinimizeBox = false;
+                dialog.StartPosition = FormStartPosition.CenterParent;
+                dialog.BackColor = Color.FromArgb(9, 17, 17);
+                dialog.ForeColor = Color.White;
+                dialog.Font = new Font("Segoe UI", 9);
+                var heading = new Label { Text = "Choose a device password", ForeColor = Color.White };
+                heading.SetBounds(20, 17, 320, 25);
+                dialog.Controls.Add(heading);
+                var help = new Label { Text = "Use this password when adding this PC in the dashboard.", ForeColor = Color.FromArgb(162, 183, 174) };
+                help.SetBounds(20, 42, 320, 36);
+                dialog.Controls.Add(help);
+                var password = new TextBox { UseSystemPasswordChar = true };
+                password.SetBounds(20, 85, 320, 26);
+                dialog.Controls.Add(password);
+                var confirm = new TextBox { UseSystemPasswordChar = true };
+                confirm.SetBounds(20, 121, 320, 26);
+                dialog.Controls.Add(confirm);
+                var save = MakeButton("Save and connect", 180, 170, 160, true);
+                save.Click += delegate
+                {
+                    if (password.Text.Length < 8 || password.Text != confirm.Text)
+                    {
+                        MessageBox.Show(dialog, "Enter a matching password of at least 8 characters.", "Vortix");
+                        return;
+                    }
+                    dialog.DialogResult = DialogResult.OK;
+                };
+                dialog.Controls.Add(save);
+                dialog.AcceptButton = save;
+                if (dialog.ShowDialog(window) != DialogResult.OK) return;
+                try
+                {
+                    var start = new ProcessStartInfo(nodePath, "\"" + agentPath + "\" login");
+                    start.UseShellExecute = false;
+                    start.CreateNoWindow = true;
+                    start.RedirectStandardInput = true;
+                    start.RedirectStandardOutput = true;
+                    start.RedirectStandardError = true;
+                    using (var process = Process.Start(start))
+                    {
+                        process.StandardInput.WriteLine(password.Text);
+                        process.StandardInput.Close();
+                        if (!process.WaitForExit(10000)) { process.Kill(); throw new Exception("Password setup timed out."); }
+                        string output = process.StandardOutput.ReadToEnd();
+                        if (process.ExitCode != 0 || !output.Contains("Password saved successfully"))
+                            throw new Exception("The device password could not be saved.");
+                    }
+                    StartAgent();
+                    Poll();
+                }
+                catch (Exception error) { MessageBox.Show(window, error.Message, "Vortix setup"); }
             }
         }
 
@@ -339,6 +420,7 @@ namespace VortixTray
             {
                 if (timer != null) timer.Dispose();
                 if (showSignal != null) showSignal.Dispose();
+                if (exitSignal != null) exitSignal.Dispose();
                 if (notify != null) notify.Dispose();
                 if (window != null) window.Dispose();
             }

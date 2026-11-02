@@ -1,6 +1,6 @@
 {
   "name": "vortix",
-  "version": "1.2.11",
+  "version": "1.2.12",
   "description": "AI-powered remote OS control system with natural language commands, real-time monitoring, and modern web dashboard",
   "main": "index.js",
   "bin": {
@@ -8,7 +8,8 @@
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js",
-    "build:tray": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-tray.ps1"
+    "build:tray": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-tray.ps1",
+    "build:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1"
   },
   "keywords": [
     "ai",

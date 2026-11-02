@@ -22,13 +22,15 @@ real-time monitoring, and advanced device management.
 npm install -g vortix
 ```
 
-The npm registry currently has version 1.2.3. For all-drive scans and screen-aware commands in Windows apps, stop the old agent and install the newer CLI from this repository on the device:
+The npm registry currently has version 1.2.3. On Windows, install Node.js and download the [Vortix 1.2.12 installer](https://vortixai.vercel.app/downloads/VortixSetup-1.2.12.exe). It installs the matching agent package and opens the tray app. Set a device password there, then add that computer in the dashboard.
+
+To install the same version from this repository instead, stop any old agent and run:
 
 ```bash
 git clone https://github.com/Vaibhav262610/vortix.git
 cd vortix/cli_vortix
 npm pack
-npm install -g ./vortix-1.2.11.tgz
+npm install -g ./vortix-1.2.12.tgz
 vortix enable-autostart
 vortix tray
 ```
