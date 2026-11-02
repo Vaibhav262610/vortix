@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mayBeDiscordMessage, extractDiscordMessage, verifyDiscordScreen, waitForDiscordSearch } = require('../lib/discord-workflow');
+const { mayBeDiscordMessage, extractDiscordMessage, verifyDiscordScreen, waitForDiscordSearch, searchCanOpen } = require('../lib/discord-workflow');
 
 test('Discord requests preserve the explicit recipient and message', async () => {
   assert.equal(mayBeDiscordMessage('open Discord and text my friend claveb07 hello'), true);
@@ -22,6 +22,34 @@ test('screen verification uses a vision model and treats ambiguous screens as fa
   } };
   assert.deepEqual(await verifyDiscordScreen('open', 'claveb07', 'hello', 'aGVsbG8=', 'test-key', client),
     { ok: false, loading: false, reason: 'Recipient not visible' });
+});
+
+test('individual user result is accepted beside a similarly named group', async () => {
+  const client = { post: async (_url, body) => {
+    assert.match(body.messages[1].content[0].text, /optionally prefixed with @/);
+    assert.match(body.messages[1].content[0].text, /Ignore separate group conversations/);
+    return { data: { choices: [{ message: { content: JSON.stringify({ ok: true, loading: false,
+      reason: 'The Claven user result is highlighted; Claven 2 Members is a group.' }) } }] } };
+  } };
+  const result = await verifyDiscordScreen('find', 'claven07', 'hello', 'aGVsbG8=', 'key', client);
+  assert.equal(result.ok, true);
+});
+
+test('opened conversation must show the exact account username before drafting', async () => {
+  const client = { post: async (_url, body) => {
+    assert.match(body.messages[1].content[0].text, /INDIVIDUAL Discord direct-message conversation/);
+    assert.match(body.messages[1].content[0].text, /account username claven07/);
+    return { data: { choices: [{ message: { content: JSON.stringify({ ok: false,
+      loading: false, reason: 'Only display name Claven is visible' }) } }] } };
+  } };
+  const result = await verifyDiscordScreen('open', 'claven07', 'hello', 'aGVsbG8=', 'key', client);
+  assert.equal(result.ok, false);
+});
+
+test('a conservative search check can proceed to the exact opened-DM identity check', () => {
+  assert.equal(searchCanOpen({ ok: false, loading: false,
+    reason: 'Two Claven results, one person and one 2 Members group' }), true);
+  assert.equal(searchCanOpen({ ok: false, loading: true, reason: 'Searching All Users' }), false);
 });
 
 test('search waits for Discord to finish loading before it fails', async () => {

@@ -6,7 +6,7 @@ Storage Rescue can scan common user folders or accessible drives on an online de
 
 The npm registry currently serves `vortix@1.2.3`. If the device runs `vortix start` from a global npm installation, stop that process, clone or pull this repository on the device, then run `cd cli_vortix`, `npm pack`, `npm install -g ./vortix-1.2.7.tgz`, and `vortix start` in sequence. This installs the local CLI package version 1.2.7 and reads the existing password stored in that user's home directory. The dashboard shows an update notice when an older agent connects.
 
-On Windows, a request such as “open Discord and message claveb07 hello” uses a separate workflow. The agent opens Discord, searches for the recipient, drafts the message, and captures screenshots. The backend sends those screenshots to Groq's vision model to check each step. The dashboard displays the final screenshot and requires a separate click before sending. If the recipient or draft cannot be verified, it stops. The screenshots are not saved to command history.
+On Windows, a request such as “open Discord and message claveb07 hello” uses a separate workflow. The dashboard first shows the exact recipient and message for review. After the user clicks Send this message, the agent opens Discord, selects the individual user, drafts the message, and captures screenshots. The backend sends those screenshots to Groq's vision model to check each step, then sends automatically once the recipient and draft are verified. If either cannot be verified, it stops. The screenshots are not saved to command history.
 
 ## Local setup (PowerShell)
 

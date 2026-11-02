@@ -6,7 +6,7 @@ const readline = require("readline");
 const axios = require("axios");
 const crypto = require("crypto");
 const { selectGroqKey, generateGroqPlan } = require('./lib/groq-planning');
-const { mayBeDiscordMessage, extractDiscordMessage, verifyDiscordScreen, waitForDiscordSearch } = require('./lib/discord-workflow');
+const { mayBeDiscordMessage, extractDiscordMessage, verifyDiscordScreen, waitForDiscordSearch, searchCanOpen } = require('./lib/discord-workflow');
 const store = require('./lib/store');
 
 if (!/^sk_(test|live)_/.test(process.env.CLERK_SECRET_KEY || '') && !process.env.CLERK_JWT_KEY) {
@@ -433,6 +433,7 @@ wss.on("connection", async (ws, req) => {
         flow.stage = 'running';
         void (async () => {
           let frame;
+          let sendAttempted = false;
           try {
             for (const [action, label] of [['find', 'Finding the recipient'], ['open', 'Opening the conversation'], ['draft', 'Preparing the message']]) {
               if (flow.cancelled) throw new Error('Workflow cancelled.');
@@ -454,61 +455,37 @@ wss.on("connection", async (ws, req) => {
               } else {
                 check = await verifyDiscordScreen(action, flow.recipient, flow.message, frame, process.env.GROQ_API_KEY);
               }
-              if (!check.ok) throw new Error(`${label} could not be verified: ${check.reason}`);
+              if (action === 'find') {
+                if (!searchCanOpen(check)) throw new Error(`${label} could not be verified: ${check.reason}`);
+              } else if (!check.ok) {
+                throw new Error(`${label} could not be verified: ${check.reason}`);
+              }
             }
-            flow.stage = 'ready';
-            flow.expiresAt = Date.now() + 2 * 60 * 1000;
-            flow.readyTimer = setTimeout(() => {
-              if (flow.stage !== 'ready') return;
-              flow.stage = 'expired';
-              activeDiscordWorkflows.delete(flow.deviceId);
-              if (ws.pendingDiscord === flow) ws.pendingDiscord = null;
-              if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', deviceName: flow.deviceName,
-                error: 'The prepared message expired. Start again to get a fresh screen check.' }));
-            }, 2 * 60 * 1000);
-            ws.send(JSON.stringify({ type: 'WORKFLOW_READY', deviceName: flow.deviceName, workflowId: flow.id,
-              recipient: flow.recipient, message: flow.message, frame }));
-          } catch (error) {
-            flow.stage = 'failed';
-            activeDiscordWorkflows.delete(flow.deviceId);
-            ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', deviceName: flow.deviceName, error: error.message, frame }));
-          }
-        })();
-      }
-
-      if (data.type === 'CONFIRM_DISCORD_SEND') {
-        const flow = ws.pendingDiscord;
-        if (!flow || flow.id !== data.workflowId || flow.deviceName !== data.deviceName || flow.stage !== 'ready' || flow.expiresAt < Date.now()) {
-          ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'The prepared message expired. Start again.' }));
-          return;
-        }
-        const device = devices.get(flow.deviceId);
-        if (!ws.authenticatedDevices.has(flow.deviceId) || !device || device.status !== 'online') {
-          ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'The device is offline. Start again when it reconnects.' }));
-          return;
-        }
-        clearTimeout(flow.readyTimer);
-        flow.stage = 'sending';
-        void (async () => {
-          let sendAttempted = false;
-          try {
-            ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName, message: 'Checking the draft again' }));
+            if (flow.cancelled) throw new Error('Workflow cancelled.');
+            ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName,
+              message: 'Checking the draft again before sending' }));
             const before = await requestDesktopAction(device, 'observe');
             const draftCheck = await verifyDiscordScreen('draft', flow.recipient, flow.message, before, process.env.GROQ_API_KEY);
             if (!draftCheck.ok) throw new Error(`The draft changed: ${draftCheck.reason}`);
+            if (flow.cancelled) throw new Error('Workflow cancelled.');
+            flow.stage = 'sending';
+            ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName,
+              stage: 'sending', message: `Sending to @${flow.recipient}` }));
             sendAttempted = true;
             await requestDesktopAction(device, 'send');
-            flow.stage = 'sent';
             const after = await requestDesktopAction(device, 'observe');
             const sentCheck = await verifyDiscordScreen('send', flow.recipient, flow.message, after, process.env.GROQ_API_KEY);
+            flow.stage = 'done';
             ws.send(JSON.stringify({ type: 'WORKFLOW_DONE', deviceName: flow.deviceName,
               message: sentCheck.ok ? `Message sent to ${flow.recipient}.` : `Send key pressed; delivery could not be verified: ${sentCheck.reason}` }));
           } catch (error) {
+            flow.stage = 'failed';
             ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', deviceName: flow.deviceName,
-              error: sendAttempted ? `Send was attempted; delivery could not be verified: ${error.message}` : error.message }));
+              error: sendAttempted ? `Send was attempted; delivery could not be verified: ${error.message}` : error.message,
+              frame: sendAttempted ? undefined : frame }));
           } finally {
             activeDiscordWorkflows.delete(flow.deviceId);
-            ws.pendingDiscord = null;
+            if (ws.pendingDiscord === flow) ws.pendingDiscord = null;
           }
         })();
       }
@@ -516,7 +493,6 @@ wss.on("connection", async (ws, req) => {
       if (data.type === 'CANCEL_DISCORD_WORKFLOW' && ws.pendingDiscord?.id === data.workflowId) {
         if (ws.pendingDiscord.stage === 'sending') return;
         ws.pendingDiscord.cancelled = true;
-        clearTimeout(ws.pendingDiscord.readyTimer);
         if (ws.pendingDiscord.stage !== 'running' && ws.pendingDiscord.stage !== 'sending') {
           activeDiscordWorkflows.delete(ws.pendingDiscord.deviceId);
         }
@@ -879,7 +855,6 @@ wss.on("connection", async (ws, req) => {
       clearTimeout(sessionExpiryTimer);
       if (ws.pendingDiscord) {
         ws.pendingDiscord.cancelled = true;
-        clearTimeout(ws.pendingDiscord.readyTimer);
         if (ws.pendingDiscord.stage !== 'running' && ws.pendingDiscord.stage !== 'sending') {
           activeDiscordWorkflows.delete(ws.pendingDiscord.deviceId);
         }
