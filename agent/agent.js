@@ -4,6 +4,8 @@ const os = require("os");
 const readline = require("readline");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
+const net = require("net");
 const screenshot = require("screenshot-desktop");
 const { scanStorage } = require('./storage-scan');
 const { discordAction, desktopAction } = require('./desktop-control');
@@ -735,8 +737,24 @@ function startAgent() {
     }
   }
 
-  // Start the connection
-  connect();
+  // The per-user named pipe disappears when the agent exits. It prevents a
+  // manual launch and the sign-in launcher from running competing agents.
+  if (IS_WINDOWS) {
+    const userKey = crypto.createHash('sha256').update(os.homedir().toLowerCase()).digest('hex').slice(0, 16);
+    const pipeName = String.raw`\\.\pipe\vortix-agent-${userKey}`;
+    const instance = net.createServer(socket => socket.destroy());
+    instance.once('error', error => {
+      if (error.code === 'EADDRINUSE') {
+        console.log('Vortix is already running for this Windows user.');
+        return;
+      }
+      console.error('Could not start the Vortix agent:', error.message);
+      process.exitCode = 1;
+    });
+    instance.listen(pipeName, connect);
+  } else {
+    connect();
+  }
 
   // Handle Ctrl+C gracefully
   process.on('SIGINT', () => {
@@ -764,7 +782,7 @@ function startAgent() {
 // ========== AUTO-START FUNCTIONALITY ==========
 
 function enableAutoStart() {
-  console.log("Enabling auto-start on system boot...");
+  console.log("Enabling auto-start when you sign in...");
 
   const config = loadConfig();
   if (!config.password) {
@@ -787,7 +805,7 @@ function enableAutoStart() {
     config.autoStart = true;
     saveConfig(config);
     console.log("✅ Auto-start enabled successfully!");
-    console.log("   The agent will start automatically on system boot.");
+    console.log("   The agent will start automatically when you sign in.");
   } catch (err) {
     console.error("❌ Failed to enable auto-start:", err.message);
   }
@@ -823,56 +841,43 @@ function checkAutoStartStatus() {
   console.log(`Platform: ${PLATFORM} (${IS_WINDOWS ? 'Windows' : IS_MAC ? 'macOS' : IS_LINUX ? 'Linux' : 'Unknown'})`);
   console.log(`Device: ${os.hostname()}`);
   console.log(`Password Set: ${config.password ? '✅ Yes' : '❌ No'}`);
-  console.log(`Auto-start: ${config.autoStart ? '✅ Enabled' : '❌ Disabled'}`);
+  const autoStart = IS_WINDOWS ? fs.existsSync(windowsStartupPath()) : config.autoStart;
+  console.log(`Auto-start: ${autoStart ? '✅ Enabled' : '❌ Disabled'}`);
   console.log("===========================\n");
 }
 
 // ========== WINDOWS AUTO-START ==========
 
 function enableAutoStartWindows() {
-  const { execSync } = require('child_process');
-
-  // Get the path to node and the agent script
-  const nodePath = process.execPath;
-  const agentPath = __filename;
-
-  // Create a VBScript to run the agent silently (no console window)
-  const vbsPath = path.join(os.homedir(), 'vortix-agent.vbs');
-  const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run """${nodePath}"" ""${agentPath}"" start", 0, False`;
-
-  fs.writeFileSync(vbsPath, vbsContent);
-
-  // Add to Windows Task Scheduler
-  const taskName = "VortixAgent";
-  const command = `schtasks /create /tn "${taskName}" /tr "${vbsPath}" /sc onlogon /rl highest /f`;
-
-  try {
-    execSync(command, { stdio: 'ignore' });
-    console.log("   Created Windows Task Scheduler entry");
-  } catch (err) {
-    throw new Error("Failed to create scheduled task. Try running as administrator.");
-  }
+  const startupPath = windowsStartupPath();
+  const commandLine = `"${process.execPath}" "${__filename}" start`;
+  const script = `Set WshShell = CreateObject("WScript.Shell")\r\nWshShell.Run "${commandLine.replace(/"/g, '""')}", 0, False\r\n`;
+  fs.mkdirSync(path.dirname(startupPath), { recursive: true });
+  fs.writeFileSync(startupPath, script);
+  removeLegacyWindowsTask();
+  const { execFileSync } = require('child_process');
+  execFileSync('wscript.exe', [startupPath], { windowsHide: true, stdio: 'ignore', timeout: 5000 });
+  console.log('   Vortix is running quietly and will start when you sign in to Windows.');
 }
 
 function disableAutoStartWindows() {
-  const { execSync } = require('child_process');
+  const startupPath = windowsStartupPath();
+  if (fs.existsSync(startupPath)) fs.unlinkSync(startupPath);
+  removeLegacyWindowsTask();
+}
 
-  const taskName = "VortixAgent";
-  const command = `schtasks /delete /tn "${taskName}" /f`;
+function windowsStartupPath() {
+  const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+  return path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'Vortix Agent.vbs');
+}
 
-  try {
-    execSync(command, { stdio: 'ignore' });
-    console.log("   Removed Windows Task Scheduler entry");
-  } catch (err) {
-    // Task might not exist, that's okay
-  }
-
-  // Remove VBScript file
-  const vbsPath = path.join(os.homedir(), 'vortix-agent.vbs');
-  if (fs.existsSync(vbsPath)) {
-    fs.unlinkSync(vbsPath);
-  }
+function removeLegacyWindowsTask() {
+  const { execFileSync } = require('child_process');
+  try { execFileSync('schtasks.exe', ['/delete', '/tn', 'VortixAgent', '/f'], { stdio: 'ignore' }); }
+  catch { /* The previous scheduled task may not exist. */ }
+  const legacyScript = path.join(os.homedir(), 'vortix-agent.vbs');
+  try { if (fs.existsSync(legacyScript)) fs.unlinkSync(legacyScript); }
+  catch { /* The single-instance guard still prevents duplicate agents. */ }
 }
 
 // ========== macOS AUTO-START ==========

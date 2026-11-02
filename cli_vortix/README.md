@@ -28,8 +28,8 @@ The npm registry currently has version 1.2.3. For all-drive scans and screen-awa
 git clone https://github.com/Vaibhav262610/vortix.git
 cd vortix/cli_vortix
 npm pack
-npm install -g ./vortix-1.2.9.tgz
-vortix start
+npm install -g ./vortix-1.2.10.tgz
+vortix enable-autostart
 ```
 
 If you already have a clone, pull the latest changes instead of cloning again. The updated CLI uses the existing password saved for that computer account.
@@ -42,10 +42,10 @@ If you already have a clone, pull the latest changes instead of cloning again. T
 vortix login
 ```
 
-2. **Start the agent:**
+2. **Start the agent quietly on Windows and at each sign-in:**
 
 ```bash
-vortix start
+vortix enable-autostart
 ```
 
 3. **Access the dashboard:** Visit
@@ -59,6 +59,9 @@ That's it! No backend setup required - everything runs in the cloud.
 | -------------- | ------------------------------------- |
 | `vortix login` | Authenticate and register your device |
 | `vortix start` | Start the agent on current machine    |
+| `vortix enable-autostart` | Start quietly and launch at sign-in on Windows |
+| `vortix disable-autostart` | Remove the sign-in launcher |
+| `vortix status` | Show agent setup and auto-start status |
 | `vortix help`  | Show help information                 |
 
 ## Use Cases
@@ -96,7 +99,7 @@ Try these natural language commands in the dashboard:
 Enable automatic agent startup when your computer boots:
 
 ```bash
-vortix start --autostart
+vortix enable-autostart
 ```
 
 ### Screen Sharing
