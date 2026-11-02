@@ -4,7 +4,7 @@
   "description": "AI-powered remote OS control system with natural language commands, real-time monitoring, and modern web dashboard",
   "main": "index.js",
   "bin": {
-    "vortix": "./bin/vortix.js"
+    "vortix": "bin/vortix.js"
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js"
@@ -41,7 +41,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Vaibhav262610/vortix.git"
+    "url": "git+https://github.com/Vaibhav262610/vortix.git"
   },
   "homepage": "https://vortixai.vercel.app",
   "bugs": {
@@ -52,12 +52,12 @@
     "node": ">=14.0.0"
   },
   "files": [
-    "bin/",
-    "agent/",
-    "backend/",
-    "scripts/",
-    "README.md",
-    "CHANGELOG.md"
+    "bin/vortix.js",
+    "agent/agent.js",
+    "agent/auth.js",
+    "agent/storage-scan.js",
+    "scripts/postinstall.js",
+    "README.md"
   ],
   "dependencies": {
     "axios": "^1.6.0",
