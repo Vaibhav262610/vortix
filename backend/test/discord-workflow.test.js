@@ -21,7 +21,20 @@ test('screen verification uses a vision model and treats ambiguous screens as fa
     return { data: { choices: [{ message: { content: '{"ok":false,"reason":"Recipient not visible"}' } }] } };
   } };
   assert.deepEqual(await verifyDiscordScreen('open', 'claveb07', 'hello', 'aGVsbG8=', 'test-key', client),
-    { ok: false, reason: 'Recipient not visible' });
+    { ok: false, loading: false, reason: 'Recipient not visible' });
+});
+
+test('find selects the exact individual result and ignores a similarly named group', async () => {
+  const client = { post: async (_url, body) => {
+    assert.match(body.messages[1].content[0].text, /INDIVIDUAL USER result/);
+    assert.match(body.messages[1].content[0].text, /username claven07/);
+    assert.match(body.messages[1].content[0].text, /Ignore a separate group conversation/);
+    return { data: { choices: [{ message: { content: JSON.stringify({ ok: true,
+      loading: false, reason: 'Claven claven07 is the highlighted individual user' }) } }] } };
+  } };
+  const result = await verifyDiscordScreen('find', 'claven07', 'hello', 'aGVsbG8=', 'key', client);
+  assert.deepEqual(result, { ok: true, loading: false,
+    reason: 'Claven claven07 is the highlighted individual user' });
 });
 
 test('opened conversation must show the exact account username before drafting', async () => {
@@ -59,11 +72,11 @@ test('long Groq rate limit reports the wait without retrying', async () => {
   const client = { post: async () => {
     calls++;
     const error = new Error('rate limited');
-    error.response = { status: 429, headers: { 'retry-after': '45' } };
+    error.response = { status: 429, headers: { 'retry-after': '120' } };
     throw error;
   } };
   await assert.rejects(verifyDiscordScreen('open', 'claven07', 'hello', 'aGVsbG8=', 'key', client),
-    /Wait about 45 seconds/);
+    /Wait about 120 seconds/);
   assert.equal(calls, 1);
 });
 

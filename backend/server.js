@@ -7,6 +7,8 @@ const axios = require("axios");
 const crypto = require("crypto");
 const { selectGroqKey, generateGroqPlan } = require('./lib/groq-planning');
 const { mayBeDiscordMessage, extractDiscordMessage, verifyDiscordScreen } = require('./lib/discord-workflow');
+const { transcribeRecording } = require('./lib/voice');
+const { runVisibleWorkflow } = require('./lib/visible-workflow');
 const store = require('./lib/store');
 
 if (!/^sk_(test|live)_/.test(process.env.CLERK_SECRET_KEY || '') && !process.env.CLERK_JWT_KEY) {
@@ -228,6 +230,31 @@ wss.on("connection", async (ws, req) => {
         return;
       }
 
+      if (data.type === 'TRANSCRIBE_AUDIO') {
+        const requestId = typeof data.requestId === 'string' ? data.requestId.slice(0, 80) : '';
+        const reply = (payload) => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'TRANSCRIPTION_RESULT', requestId, ...payload }));
+        };
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+        if (!requestId || !ws.authenticatedDevices.has(deviceId)) {
+          reply({ error: 'Connect to an authorized device before using voice.' });
+          return;
+        }
+        if (ws.audioTranscribing) {
+          reply({ error: 'A voice request is already being transcribed.' });
+          return;
+        }
+        ws.audioTranscribing = true;
+        try {
+          reply({ text: await transcribeRecording(data, process.env.GROQ_API_KEY) });
+        } catch (error) {
+          reply({ error: error.name === 'TimeoutError' ? 'Voice transcription timed out. Try again.' : error.message });
+        } finally {
+          ws.audioTranscribing = false;
+        }
+        return;
+      }
+
       // Dashboard authenticates to view a specific device
       if (data.type === "AUTH_DEVICE") {
         const { deviceName, password } = data;
@@ -438,24 +465,63 @@ wss.on("connection", async (ws, req) => {
             ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName,
               message: 'Finding the recipient' }));
             frame = await requestDesktopAction(device, 'find', flow.recipient);
+            let phase = 'find';
+            let searchWaits = 0;
+            let openRetries = 0;
+            const selected = await runVisibleWorkflow({
+              initialFrame: frame,
+              isCancelled: () => flow.cancelled,
+              onFrame: latest => { frame = latest; },
+              observe: () => requestDesktopAction(device, 'observe'),
+              act: (action, value) => requestDesktopAction(device, action, value),
+              decide: async currentFrame => {
+                if (phase === 'find') {
+                  const found = await verifyDiscordScreen('find', flow.recipient, flow.message, currentFrame,
+                    process.env.GROQ_API_KEY, undefined, () => {
+                      if (flow.cancelled) throw new Error('Workflow cancelled.');
+                      return requestDesktopAction(device, 'observe');
+                    });
+                  if (found.ok) {
+                    phase = 'open';
+                    ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName,
+                      message: 'Selecting the highlighted individual user' }));
+                    return { type: 'act', action: 'select', value: { x: 500, y: 460 }, frame: found.frame };
+                  }
+                  if (found.loading && searchWaits++ < 2) {
+                    ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName,
+                      message: 'Waiting for the user result to appear' }));
+                    return { type: 'wait', ms: 1800, frame: found.frame };
+                  }
+                  return { type: 'stop', reason: `Finding the recipient could not be verified: ${found.reason}`, frame: found.frame };
+                }
+                ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName,
+                  message: 'Checking the opened conversation' }));
+                const opened = await verifyDiscordScreen('open', flow.recipient, flow.message, currentFrame,
+                  process.env.GROQ_API_KEY, undefined, () => requestDesktopAction(device, 'observe'));
+                if (opened.ok) return { type: 'done', value: opened, frame: opened.frame };
+                if (openRetries++ < 1) {
+                  phase = 'find';
+                  searchWaits = 0;
+                  ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName,
+                    message: 'Trying the individual result again' }));
+                  return { type: 'act', action: 'find', value: flow.recipient, frame: opened.frame };
+                }
+                return { type: 'stop', reason: `Opening the conversation could not be verified: ${opened.reason}`, frame: opened.frame };
+              },
+            });
+            const opened = selected.value;
             if (flow.cancelled) throw new Error('Workflow cancelled.');
+            frame = await requestDesktopAction(device, 'select', { x: 500, y: 960 });
             ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName,
-              message: 'Waiting for Discord search results' }));
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            for (const [action, label] of [['open', 'Opening the conversation'], ['draft', 'Preparing the message']]) {
-              if (flow.cancelled) throw new Error('Workflow cancelled.');
-              ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName, message: label }));
-              frame = await requestDesktopAction(device, action,
-                action === 'open' ? flow.recipient : flow.message);
-              if (flow.cancelled) throw new Error('Workflow cancelled.');
-              const check = await verifyDiscordScreen(action, flow.recipient, flow.message, frame,
-                process.env.GROQ_API_KEY, undefined, async () => {
-                  if (flow.cancelled) throw new Error('Workflow cancelled.');
-                  return requestDesktopAction(device, 'observe');
-                });
-              if (check.frame) frame = check.frame;
-              if (!check.ok) throw new Error(`${label} could not be verified: ${check.reason}`);
-            }
+              message: 'Checking the prepared message' }));
+            frame = await requestDesktopAction(device, 'draft', flow.message);
+            const draftCheck = await verifyDiscordScreen('draft', flow.recipient, flow.message, frame,
+              process.env.GROQ_API_KEY, undefined, async () => {
+                if (flow.cancelled) throw new Error('Workflow cancelled.');
+                return requestDesktopAction(device, 'observe');
+              });
+            if (draftCheck.frame) frame = draftCheck.frame;
+            if (!draftCheck.ok) throw new Error(`The draft could not be verified: ${draftCheck.reason}`);
             if (flow.cancelled) throw new Error('Workflow cancelled.');
             flow.stage = 'sending';
             ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName,
@@ -953,7 +1019,7 @@ wss.on("connection", async (ws, req) => {
       device.lastSeen = Date.now();
       const supportsStorageScan = Array.isArray(data.capabilities) && data.capabilities.includes('storage-scan-v1');
       const supportsDriveScan = Array.isArray(data.capabilities) && data.capabilities.includes('storage-scan-v2');
-      const supportsDiscordDm = Array.isArray(data.capabilities) && data.capabilities.includes('discord-dm-v1');
+      const supportsDiscordDm = Array.isArray(data.capabilities) && data.capabilities.includes('discord-dm-v2');
       if (device.supportsStorageScan !== supportsStorageScan || device.supportsDriveScan !== supportsDriveScan || device.supportsDiscordDm !== supportsDiscordDm) {
         device.supportsStorageScan = supportsStorageScan;
         device.supportsDriveScan = supportsDriveScan;

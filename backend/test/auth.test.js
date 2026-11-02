@@ -169,6 +169,10 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
     const deniedScan = waitForMessage(secondDashboard, 'STORAGE_SCAN_RESULT');
     secondDashboard.send(JSON.stringify({ type: 'SCAN_STORAGE', deviceName: 'TEST' }));
     assert.match((await deniedScan).error, /denied/);
+    const deniedVoice = waitForMessage(secondDashboard, 'TRANSCRIPTION_RESULT');
+    secondDashboard.send(JSON.stringify({ type: 'TRANSCRIBE_AUDIO', deviceName: 'TEST', requestId: 'voice-test',
+      mime: 'audio/webm', audio: Buffer.alloc(1500).toString('base64') }));
+    assert.match((await deniedVoice).error, /authorized device/);
     secondDashboard.terminate();
 
     returningDashboard = new WebSocket(`ws://127.0.0.1:${port}/?type=dashboard`);

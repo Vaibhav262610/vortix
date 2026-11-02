@@ -499,6 +499,14 @@ export default function Home() {
 	const [logs, setLogs] = useState<string[]>([]);
 	const [selectedDevice, setSelectedDevice] = useState<string>("");
 	const [command, setCommand] = useState("");
+	const [voiceState, setVoiceState] = useState<"idle" | "recording" | "transcribing">("idle");
+	const [voiceStatus, setVoiceStatus] = useState("");
+	const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+	const voiceStreamRef = useRef<MediaStream | null>(null);
+	const voiceStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const voiceRequestRef = useRef<string | null>(null);
+	const voiceUsedRef = useRef(false);
+	const submitVoiceCommandRef = useRef<(text: string) => void>(() => {});
 
 	const wsRef = useRef<WebSocket | null>(null);
 	const [activeWs, setActiveWs] = useState<WebSocket | null>(null);
@@ -529,14 +537,105 @@ export default function Home() {
 
 	};
 
-	const sendCommand = useCallback(() => {
-		if (!selectedDevice || !command.trim() || wsRef.current?.readyState !== WebSocket.OPEN) return;
+	const speak = useCallback((message: string) => {
+		if (!voiceUsedRef.current || typeof window === "undefined" || !window.speechSynthesis) return;
+		window.speechSynthesis.cancel();
+		const utterance = new SpeechSynthesisUtterance(message.slice(0, 240));
+		utterance.rate = 1.05;
+		window.speechSynthesis.speak(utterance);
+	}, []);
+
+	const submitCommand = useCallback((text: string) => {
+		const spokenCommand = text.trim();
+		if (!selectedDevice || !spokenCommand || wsRef.current?.readyState !== WebSocket.OPEN) {
+			setVoiceStatus("Connect a device before giving a command.");
+			return;
+		}
 		setIsPlanning(true);
 		setIsExecuting(false);
-		setCommandHistory((prev) => [...prev, command]);
-		wsRef.current.send(JSON.stringify({ type: "PLAN", deviceName: selectedDevice, command }));
+		setCommandHistory((prev) => [...prev, spokenCommand]);
+		wsRef.current.send(JSON.stringify({ type: "PLAN", deviceName: selectedDevice, command: spokenCommand }));
 		setCommand("");
-	}, [selectedDevice, command]);
+	}, [selectedDevice]);
+
+	useEffect(() => { submitVoiceCommandRef.current = submitCommand; }, [submitCommand]);
+
+	const sendCommand = useCallback(() => submitCommand(command), [submitCommand, command]);
+
+	const toggleVoice = async () => {
+		if (voiceRecorderRef.current?.state === "recording") {
+			voiceRecorderRef.current.stop();
+			return;
+		}
+		if (voiceState !== "idle" || isPlanning || isExecuting) return;
+		if (!selectedDevice || wsRef.current?.readyState !== WebSocket.OPEN) {
+			setVoiceStatus("Connect a device before using voice.");
+			return;
+		}
+		if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+			setVoiceStatus("Microphone recording is unavailable in this browser. Type your command instead.");
+			return;
+		}
+		try {
+			const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+			voiceStreamRef.current = stream;
+			const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find(type => MediaRecorder.isTypeSupported(type));
+			const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+			voiceRecorderRef.current = recorder;
+			voiceUsedRef.current = true;
+			const chunks: Blob[] = [];
+			recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+			recorder.onstop = () => {
+				if (voiceStopTimerRef.current) clearTimeout(voiceStopTimerRef.current);
+				voiceStreamRef.current?.getTracks().forEach(track => track.stop());
+				voiceStreamRef.current = null;
+				const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
+				if (blob.size < 1000 || blob.size > 6_000_000) {
+					setVoiceState("idle");
+					setVoiceStatus("The recording was empty or too large. Try a short command.");
+					return;
+				}
+				setVoiceState("transcribing");
+				setVoiceStatus("Transcribing your command…");
+				const reader = new FileReader();
+				reader.onload = () => {
+					const audio = typeof reader.result === "string" ? reader.result.split(",")[1] : "";
+					if (!audio || wsRef.current?.readyState !== WebSocket.OPEN) {
+						setVoiceState("idle");
+						setVoiceStatus("The connection was lost. Record the command again.");
+						return;
+					}
+					const requestId = crypto.randomUUID();
+					voiceRequestRef.current = requestId;
+					wsRef.current.send(JSON.stringify({ type: "TRANSCRIBE_AUDIO", requestId,
+						deviceName: selectedDevice, mime: blob.type, audio }));
+				};
+				reader.onerror = () => { setVoiceState("idle"); setVoiceStatus("Could not read the recording."); };
+				reader.readAsDataURL(blob);
+			};
+			recorder.start();
+			setVoiceState("recording");
+			setVoiceStatus("Listening. Tap again when you finish speaking.");
+			voiceStopTimerRef.current = setTimeout(() => {
+				if (recorder.state === "recording") recorder.stop();
+			}, 20_000);
+		} catch (error) {
+			voiceStreamRef.current?.getTracks().forEach(track => track.stop());
+			voiceStreamRef.current = null;
+			setVoiceState("idle");
+			setVoiceStatus(error instanceof Error ? error.message : "Microphone access failed.");
+		}
+	};
+
+	useEffect(() => () => {
+		if (voiceStopTimerRef.current) clearTimeout(voiceStopTimerRef.current);
+		if (voiceRecorderRef.current?.state === "recording") {
+			voiceRecorderRef.current.onstop = null;
+			voiceRecorderRef.current.stop();
+		}
+		voiceStreamRef.current?.getTracks().forEach(track => track.stop());
+		if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+	}, []);
 
 	// Keyboard shortcuts
 	useEffect(() => {
@@ -642,6 +741,20 @@ export default function Home() {
 						}, 45000);
 						return;
 					}
+					if (data.type === "TRANSCRIPTION_RESULT") {
+						if (data.requestId !== voiceRequestRef.current) return;
+						voiceRequestRef.current = null;
+						setVoiceState("idle");
+						if (data.error) {
+							setVoiceStatus(data.error);
+							speak("I could not transcribe that. Please try again.");
+						} else if (typeof data.text === "string" && data.text.trim()) {
+							setVoiceStatus(`Heard: ${data.text}`);
+							setCommand(data.text);
+							submitVoiceCommandRef.current(data.text);
+						}
+						return;
+					}
 
 					if (data.type === "DEVICES") {
 						console.log("Devices received:", data.devices);
@@ -682,12 +795,14 @@ export default function Home() {
 						setPlanPreview(data.steps);
 						setPlanId(data.planId);
 						setPlanDeviceName(data.deviceName);
+						speak("I have a plan ready. Please review it before I continue.");
 					}
 
 					if (data.type === "WORKFLOW_PREVIEW") {
 						setIsPlanning(false);
 						setDiscordWorkflow({ id: data.workflowId, deviceName: data.deviceName,
 							recipient: data.recipient, message: data.message, stage: "preview" });
+						speak(`I found a message for ${data.recipient}. Please review the recipient and text before sending.`);
 					}
 					if (data.type === "WORKFLOW_STATUS") {
 						setDiscordWorkflow(current => current && current.deviceName === data.deviceName
@@ -696,12 +811,14 @@ export default function Home() {
 					if (data.type === "WORKFLOW_DONE") {
 						setIsExecuting(false);
 						setDiscordWorkflow(current => current ? { ...current, stage: "done", status: data.message, frame: undefined } : current);
+						speak(data.message);
 					}
 					if (data.type === "WORKFLOW_ERROR") {
 						setIsPlanning(false);
 						setIsExecuting(false);
 						setDiscordWorkflow(current => current ? { ...current, stage: "error", status: data.error, frame: data.frame } : current);
 						setLogs(prev => [...prev, `[ERROR] ${data.error}`]);
+						speak(`The Discord action stopped. ${data.error}`);
 					}
 
 					if (data.type === "PLAN_ERROR") {
@@ -710,6 +827,7 @@ export default function Home() {
 						setIsExecuting(false);
 						setPlanId("");
 						setLogs((prev) => [...prev, `[ERROR] ${data.error}`]);
+						speak(`Planning failed. ${data.error}`);
 						alert(
 							`AI Planning Error: ${data.error}\n\nPlease enter commands directly instead.`,
 						);
@@ -726,6 +844,7 @@ export default function Home() {
 					if (data.type === "EXECUTION_FINISHED") {
 						setIsExecuting(false);
 						console.log("Execution finished");
+						speak(data.error ? "The command failed." : "The command finished.");
 					}
 
 					if (data.type === "LOG") {
@@ -827,6 +946,9 @@ export default function Home() {
 					setSelectedDevice("");
 					setIsPlanning(false);
 					setIsExecuting(false);
+					voiceRequestRef.current = null;
+					setVoiceState("idle");
+					setVoiceStatus("Connection lost. Reconnect and record again.");
 					setPlanPreview([]);
 					setPlanId("");
 					if (disposed) return;
@@ -862,7 +984,7 @@ export default function Home() {
 			clearInterval(authRefreshInterval);
 			wsRef.current?.close();
 		};
-	}, [getToken, isLoaded, isSignedIn]);
+	}, [getToken, isLoaded, isSignedIn, speak]);
 
 	// Auto-scroll when logs update (unless user scrolled up)
 	useEffect(() => {
@@ -1184,7 +1306,7 @@ export default function Home() {
 					<div className="glass rounded-xl p-4">
 						<div className="flex items-center justify-between mb-3">
 							<p className="text-xs font-medium uppercase tracking-widest text-white/45">
-								Send Command
+								Talk to Vortix
 							</p>
 							{selectedDevice && (
 								<div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-emerald-600/10 border border-emerald-600/30">
@@ -1196,13 +1318,20 @@ export default function Home() {
 							)}
 						</div>
 						<div className="flex flex-col gap-3">
+							<button type="button" onClick={toggleVoice} aria-pressed={voiceState === "recording"}
+								disabled={voiceState !== "recording" && (voiceState === "transcribing" || isExecuting || isPlanning || !selectedDevice)}
+								className="flex w-full items-center justify-center gap-3 rounded-xl bg-emerald-600 px-5 py-4 text-base font-semibold text-white shadow-lg shadow-emerald-900/30 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50">
+								<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="9" y="2" width="6" height="13" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 17v5m-4 0h8" /></svg>
+								{voiceState === "recording" ? "Stop and send voice" : voiceState === "transcribing" ? "Transcribing…" : "Speak a command"}
+							</button>
+							{voiceStatus && <p role="status" className="text-xs leading-5 text-emerald-200/80">{voiceStatus}</p>}
 							<input
 								value={command}
 								onChange={(e) => setCommand(e.target.value)}
 								onKeyDown={(e) => e.key === "Enter" && sendCommand()}
 								placeholder={
 									selectedDevice
-										? "Type a command or describe what you want to do..."
+										? "Or type what you want Vortix to do..."
 										: "Select a device first..."
 								}
 								disabled={!selectedDevice}
@@ -1219,13 +1348,13 @@ export default function Home() {
 										? "cursor-not-allowed bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
 										: !selectedDevice
 											? "cursor-not-allowed bg-white/5 text-white/40 border border-white/10"
-											: "bg-emerald-600 hover:bg-emerald-700 text-white"
+											: "border border-white/15 bg-white/5 text-white/80 hover:bg-white/10"
 								}`}>
 								{isExecuting
 									? "Executing..."
 									: isPlanning
 										? "Planning..."
-										: "Send Command"}
+									: "Send typed command"}
 							</button>
 						</div>
 						{!selectedDevice && (
@@ -1988,7 +2117,7 @@ export default function Home() {
 							<div className="hidden md:block glass rounded-2xl p-5 sm:p-6">
 								<div className="flex items-center justify-between mb-3">
 									<p className="text-xs font-medium uppercase tracking-widest text-white/45">
-										Send Command
+										Talk to Vortix
 									</p>
 									<div className="flex items-center gap-2">
 										{selectedDevice && (
@@ -2018,6 +2147,13 @@ export default function Home() {
 										</button>
 									</div>
 								</div>
+								<button type="button" onClick={toggleVoice} aria-pressed={voiceState === "recording"}
+									disabled={voiceState !== "recording" && (voiceState === "transcribing" || isExecuting || isPlanning || !selectedDevice)}
+									className="mb-3 flex w-full items-center justify-center gap-3 rounded-xl bg-emerald-600 px-5 py-4 text-base font-semibold text-white shadow-lg shadow-emerald-900/30 transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50">
+									<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="9" y="2" width="6" height="13" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 17v5m-4 0h8" /></svg>
+									{voiceState === "recording" ? "Stop and send voice" : voiceState === "transcribing" ? "Transcribing…" : "Speak a command"}
+								</button>
+								{voiceStatus && <p role="status" className="mb-3 text-sm leading-6 text-emerald-200/80">{voiceStatus}</p>}
 								<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
 									<div className="flex-1 min-w-0">
 										<input
@@ -2026,7 +2162,7 @@ export default function Home() {
 											onKeyDown={(e) => e.key === "Enter" && sendCommand()}
 											placeholder={
 												selectedDevice
-													? "Type a command or describe what you want to do..."
+												? "Or type what you want Vortix to do..."
 													: "Select a device first..."
 											}
 											disabled={!selectedDevice}
@@ -2044,13 +2180,13 @@ export default function Home() {
 												? "cursor-not-allowed bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
 												: !selectedDevice
 													? "cursor-not-allowed bg-white/5 text-white/40 border border-white/10"
-													: "bg-emerald-600 hover:bg-emerald-700 text-white"
+												: "border border-white/15 bg-white/5 text-white/80 hover:bg-white/10"
 										}`}>
 										{isExecuting
 											? "Executing..."
 											: isPlanning
 												? "Planning..."
-												: "Send Command"}
+										: "Send typed command"}
 									</button>
 								</div>
 								{!selectedDevice && (

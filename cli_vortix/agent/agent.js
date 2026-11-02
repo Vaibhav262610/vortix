@@ -156,7 +156,7 @@ function startAgent() {
         JSON.stringify({
           type: "HEARTBEAT",
           platform: PLATFORM,
-          capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v1'] : [])]
+          capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v2'] : [])]
         })
       );
 
@@ -169,7 +169,7 @@ function startAgent() {
             JSON.stringify({
               type: "HEARTBEAT",
               platform: PLATFORM,
-              capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v1'] : [])]
+              capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v2'] : [])]
             })
           );
         }
