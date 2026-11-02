@@ -2,9 +2,11 @@
 
 Vortix is a remote device control project with a Next.js dashboard, a WebSocket backend, and a device agent. The dashboard uses Clerk for account sign-in. A separate device password unlocks each connected agent.
 
-The Storage Rescue check scans common user folders on an online device and lists the largest files and folders. It is read-only, bounded to 10,000 files or 12 seconds, and lets the owner open a result in the file browser. Update the agent and backend together to use it.
+Storage Rescue can scan common user folders or accessible drives on an online device and lists large files and folders. It is read-only and bounded per drive, so large drives may show partial results. Windows system folders are skipped. The owner can open a result in the file browser. Update the agent and backend together to use it.
 
-The npm registry currently serves `vortix@1.2.3`, which does not include Storage Rescue. If the device runs `vortix start` from a global npm installation, stop that process, clone or pull this repository on the device, then run `cd cli_vortix`, `npm pack`, `npm install -g ./vortix-1.2.4.tgz`, and `vortix start` in sequence. This installs the local CLI package version 1.2.4 with its dependencies and reads the existing password stored in that user's home directory. The dashboard shows an update notice when an older agent connects.
+The npm registry currently serves `vortix@1.2.3`. If the device runs `vortix start` from a global npm installation, stop that process, clone or pull this repository on the device, then run `cd cli_vortix`, `npm pack`, `npm install -g ./vortix-1.2.5.tgz`, and `vortix start` in sequence. This installs the local CLI package version 1.2.5 and reads the existing password stored in that user's home directory. The dashboard shows an update notice when an older agent connects.
+
+On Windows, a request such as “open Discord and message claveb07 hello” uses a separate workflow. The agent opens Discord, searches for the recipient, drafts the message, and captures screenshots. The backend sends those screenshots to Groq's vision model to check each step. The dashboard displays the final screenshot and requires a separate click before sending. If the recipient or draft cannot be verified, it stops. The screenshots are not saved to command history.
 
 ## Local setup (PowerShell)
 

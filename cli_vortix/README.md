@@ -22,13 +22,13 @@ real-time monitoring, and advanced device management.
 npm install -g vortix
 ```
 
-The npm registry currently has version 1.2.3. For Storage Rescue, stop the old agent and install the newer CLI from this repository on the device:
+The npm registry currently has version 1.2.3. For all-drive scans and screen-aware Discord messaging, stop the old agent and install the newer CLI from this repository on the device:
 
 ```bash
 git clone https://github.com/Vaibhav262610/vortix.git
 cd vortix/cli_vortix
 npm pack
-npm install -g ./vortix-1.2.4.tgz
+npm install -g ./vortix-1.2.5.tgz
 vortix start
 ```
 

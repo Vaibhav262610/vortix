@@ -17,7 +17,13 @@ type Device = {
 	status: string;
 	authenticated: boolean;
 	supportsStorageScan?: boolean;
+	supportsDriveScan?: boolean;
+	supportsDiscordDm?: boolean;
 };
+
+type DiscordWorkflow = { id: string; deviceName: string; recipient: string; message: string;
+	stage: "preview" | "running" | "ready" | "sending" | "done" | "error";
+	status?: string; frame?: string };
 
 type ApprovalDialog = {
 	isOpen: boolean;
@@ -469,6 +475,7 @@ export default function Home() {
 	const [planPreview, setPlanPreview] = useState<{ command: string }[]>([]);
 	const [planId, setPlanId] = useState("");
 	const [planDeviceName, setPlanDeviceName] = useState("");
+	const [discordWorkflow, setDiscordWorkflow] = useState<DiscordWorkflow | null>(null);
 	const [approvalDialog, setApprovalDialog] = useState<ApprovalDialog>(null);
 	const [authDialog, setAuthDialog] = useState<AuthDialog>(null);
 	const [authPassword, setAuthPassword] = useState("");
@@ -610,7 +617,7 @@ export default function Home() {
 
 				ws.onmessage = (event) => {
 					const data = JSON.parse(event.data);
-					console.log("Message received:", data.type, data);
+					console.log("Message received:", data.type);
 
 					if (data.type === "USER_AUTH_SUCCESS") {
 						setWsConnected(true);
@@ -675,6 +682,31 @@ export default function Home() {
 						setPlanPreview(data.steps);
 						setPlanId(data.planId);
 						setPlanDeviceName(data.deviceName);
+					}
+
+					if (data.type === "WORKFLOW_PREVIEW") {
+						setIsPlanning(false);
+						setDiscordWorkflow({ id: data.workflowId, deviceName: data.deviceName,
+							recipient: data.recipient, message: data.message, stage: "preview" });
+					}
+					if (data.type === "WORKFLOW_STATUS") {
+						setDiscordWorkflow(current => current && current.deviceName === data.deviceName
+							? { ...current, stage: current.stage === "sending" ? "sending" : "running", status: data.message } : current);
+					}
+					if (data.type === "WORKFLOW_READY") {
+						setIsExecuting(false);
+						setDiscordWorkflow(current => current && current.id === data.workflowId
+							? { ...current, stage: "ready", frame: data.frame, status: "Recipient and draft checked on screen." } : current);
+					}
+					if (data.type === "WORKFLOW_DONE") {
+						setIsExecuting(false);
+						setDiscordWorkflow(current => current ? { ...current, stage: "done", status: data.message, frame: undefined } : current);
+					}
+					if (data.type === "WORKFLOW_ERROR") {
+						setIsPlanning(false);
+						setIsExecuting(false);
+						setDiscordWorkflow(current => current ? { ...current, stage: "error", status: data.error, frame: data.frame } : current);
+						setLogs(prev => [...prev, `[ERROR] ${data.error}`]);
 					}
 
 					if (data.type === "PLAN_ERROR") {
@@ -1439,6 +1471,40 @@ export default function Home() {
 				</div>
 			)}
 
+			{discordWorkflow && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="discord-workflow-title">
+					<div className="glass max-h-full w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/15 p-6 shadow-2xl sm:p-8">
+						<p className="text-xs font-semibold uppercase tracking-widest text-emerald-400">Screen-aware action</p>
+						<h2 id="discord-workflow-title" className="mt-2 text-xl font-semibold text-white">Discord direct message</h2>
+						<p className="mt-3 text-sm leading-6 text-white/60">Device: {discordWorkflow.deviceName}. Vortix checks the visible recipient and draft before sending.</p>
+						<div className="mt-5 rounded-xl border border-white/10 bg-black/30 p-4 text-sm">
+							<p className="text-white/50">To <strong className="text-white">@{discordWorkflow.recipient}</strong></p>
+							<p className="mt-3 whitespace-pre-wrap break-words text-white">{discordWorkflow.message}</p>
+						</div>
+						{discordWorkflow.status && <p role="status" className={`mt-4 text-sm ${discordWorkflow.stage === "error" ? "text-red-300" : "text-emerald-200"}`}>{discordWorkflow.status}</p>}
+						{(discordWorkflow.stage === "ready" || discordWorkflow.stage === "error") && discordWorkflow.frame && <div className="mt-5"><p className="mb-2 text-xs text-white/50">{discordWorkflow.stage === "ready" ? "Current screen. Confirm the recipient and unsent draft yourself." : "Screen at the point where the workflow stopped."}</p>
+							<img src={`data:image/jpeg;base64,${discordWorkflow.frame}`} alt="Discord screen with the prepared message" className="max-h-80 w-full rounded-xl border border-white/10 object-contain" />
+						</div>}
+						<div className="mt-6 flex flex-wrap gap-3">
+							{discordWorkflow.stage !== "sending" && <button type="button" className="rounded-xl border border-white/15 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10" onClick={() => {
+								wsRef.current?.send(JSON.stringify({ type: "CANCEL_DISCORD_WORKFLOW", workflowId: discordWorkflow.id }));
+								setDiscordWorkflow(null); setIsExecuting(false);
+							}}>{discordWorkflow.stage === "done" || discordWorkflow.stage === "error" ? "Close" : "Cancel"}</button>}
+							{discordWorkflow.stage === "preview" && <button type="button" className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500" onClick={() => {
+								wsRef.current?.send(JSON.stringify({ type: "START_DISCORD_WORKFLOW", deviceName: discordWorkflow.deviceName, workflowId: discordWorkflow.id }));
+								setDiscordWorkflow(current => current ? { ...current, stage: "running", status: "Opening Discord…" } : current);
+								setIsExecuting(true);
+							}}>Prepare message</button>}
+							{discordWorkflow.stage === "ready" && <button type="button" className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500" onClick={() => {
+								wsRef.current?.send(JSON.stringify({ type: "CONFIRM_DISCORD_SEND", deviceName: discordWorkflow.deviceName, workflowId: discordWorkflow.id }));
+								setDiscordWorkflow(current => current ? { ...current, stage: "sending", status: "Checking and sending…" } : current);
+								setIsExecuting(true);
+							}}>Send message</button>}
+						</div>
+					</div>
+				</div>
+			)}
+
 			{planPreview.length > 0 && (
 				<div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm">
 					<div className="glass rounded-2xl border border-white/10 p-6 sm:p-8 max-w-2xl w-full mx-4 shadow-2xl">
@@ -2073,6 +2139,7 @@ export default function Home() {
 								deviceName={selectedDevice}
 								online={devices.some((device) => device.deviceName === selectedDevice && device.status === "online")}
 								supported={devices.some((device) => device.deviceName === selectedDevice && device.supportsStorageScan === true)}
+								supportsDriveScan={devices.some((device) => device.deviceName === selectedDevice && device.supportsDriveScan === true)}
 								ws={activeWs}
 								onBrowseFolder={openFileTransfer}
 							/>

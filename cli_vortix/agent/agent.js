@@ -6,6 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const screenshot = require("screenshot-desktop");
 const { scanStorage } = require('./storage-scan');
+const { discordAction } = require('./desktop-control');
 
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
@@ -155,7 +156,7 @@ function startAgent() {
         JSON.stringify({
           type: "HEARTBEAT",
           platform: PLATFORM,
-          capabilities: ['storage-scan-v1']
+          capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v1'] : [])]
         })
       );
 
@@ -168,7 +169,7 @@ function startAgent() {
             JSON.stringify({
               type: "HEARTBEAT",
               platform: PLATFORM,
-              capabilities: ['storage-scan-v1']
+              capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v1'] : [])]
             })
           );
         }
@@ -316,8 +317,8 @@ function startAgent() {
           const getCPUUsage = () => {
             return new Promise((resolve) => {
               if (IS_WINDOWS) {
-                // Windows: Use wmic for more accurate CPU reading
-                exec('wmic cpu get loadpercentage', (err, stdout) => {
+                // Windows: Use PowerShell for CPU reading (wmic is deprecated)
+                exec('powershell -command "Get-Counter \'\\Processor(_Total)\\% Processor Time\' | Select-Object -ExpandProperty CounterSamples | Select-Object -ExpandProperty CookedValue"', (err, stdout) => {
                   if (err) {
                     console.error("Error getting CPU usage:", err);
                     // Fallback to Node.js method
@@ -325,13 +326,10 @@ function startAgent() {
                     return;
                   }
 
-                  const lines = stdout.trim().split('\n');
-                  if (lines.length >= 2) {
-                    const cpuLoad = parseInt(lines[1].trim());
-                    if (!isNaN(cpuLoad)) {
-                      resolve(cpuLoad);
-                      return;
-                    }
+                  const cpuLoad = parseFloat(stdout.trim());
+                  if (!isNaN(cpuLoad)) {
+                    resolve(Math.round(cpuLoad));
+                    return;
                   }
                   fallbackCPUMeasure(resolve);
                 });
@@ -376,25 +374,18 @@ function startAgent() {
           const getDiskUsage = () => {
             return new Promise((resolve) => {
               if (IS_WINDOWS) {
-                // Windows: Get C: drive usage
-                exec('wmic logicaldisk where "DeviceID=\'C:\'" get Size,FreeSpace', (err, stdout) => {
+                // Windows: Use PowerShell for disk usage (wmic is deprecated)
+                exec('powershell -command "Get-PSDrive C | Select-Object Used,Free | ForEach-Object { [math]::Round(($_.Used / ($_.Used + $_.Free)) * 100) }"', (err, stdout) => {
                   if (err) {
                     console.error("Error getting disk usage:", err);
                     resolve(0);
                     return;
                   }
 
-                  const lines = stdout.trim().split('\n');
-                  if (lines.length >= 2) {
-                    const values = lines[1].trim().split(/\s+/);
-                    if (values.length >= 2) {
-                      const freeSpace = parseInt(values[0]);
-                      const totalSpace = parseInt(values[1]);
-                      const usedSpace = totalSpace - freeSpace;
-                      const diskUsage = (usedSpace / totalSpace) * 100;
-                      resolve(Math.round(diskUsage));
-                      return;
-                    }
+                  const diskUsage = parseInt(stdout.trim());
+                  if (!isNaN(diskUsage)) {
+                    resolve(diskUsage);
+                    return;
                   }
                   resolve(0);
                 });
@@ -458,18 +449,26 @@ function startAgent() {
           });
         }
 
-        // Read-only scan of common user folders for storage troubleshooting.
+        // Read-only scan of user folders or accessible drive roots.
         if (data.type === 'SCAN_STORAGE' && typeof data.requestId === 'string') {
           if (storageScanRunning) {
             ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', requestId: data.requestId, error: 'A storage scan is already running.' }));
           } else {
             storageScanRunning = true;
-            scanStorage().then(result => {
+            scanStorage({ scope: data.scope || 'home', drive: data.drive }).then(result => {
               if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', requestId: data.requestId, ...result }));
             }).catch(error => {
               if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', requestId: data.requestId, error: error.message }));
             }).finally(() => { storageScanRunning = false; });
           }
+        }
+
+        if (data.type === 'DISCORD_ACTION' && typeof data.requestId === 'string') {
+          discordAction(data.action, data.value).then(frame => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'DISCORD_ACTION_RESULT', requestId: data.requestId, frame }));
+          }).catch(error => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'DISCORD_ACTION_RESULT', requestId: data.requestId, error: error.message }));
+          });
         }
 
         // File browsing

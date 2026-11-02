@@ -37,3 +37,21 @@ test('storage scan finds large files and folders without changing them', async (
     fs.rmdirSync(home);
   }
 });
+
+test('all-drives scan includes files outside the home folder', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vortix-drive-'));
+  const outside = path.join(root, 'work');
+  fs.mkdirSync(outside);
+  const file = path.join(outside, 'video.bin');
+  fs.writeFileSync(file, Buffer.alloc(16384));
+  try {
+    const result = await scanStorage({ scope: 'all-drives', driveRoots: [root], maxFiles: 100 });
+    assert.equal(result.files[0].path, file);
+    assert.deepEqual(result.drives, [root]);
+    assert.equal(result.truncated, false);
+    const selected = await scanStorage({ scope: 'drive', drive: root, driveRoots: [root] });
+    assert.equal(selected.files[0].path, file);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

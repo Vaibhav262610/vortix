@@ -6,6 +6,7 @@ const readline = require("readline");
 const axios = require("axios");
 const crypto = require("crypto");
 const { selectGroqKey, generateGroqPlan } = require('./lib/groq-planning');
+const { mayBeDiscordMessage, extractDiscordMessage, verifyDiscordScreen } = require('./lib/discord-workflow');
 const store = require('./lib/store');
 
 if (!/^sk_(test|live)_/.test(process.env.CLERK_SECRET_KEY || '') && !process.env.CLERK_JWT_KEY) {
@@ -21,6 +22,20 @@ const pendingResults = new Map();
 const screenShareSessions = new Map(); // deviceName -> Set of dashboard websockets
 const pendingAudits = new Map();
 const pendingStorageScans = new Map();
+const pendingDesktopActions = new Map();
+const activeDiscordWorkflows = new Map();
+
+function requestDesktopAction(device, action, value) {
+  return new Promise((resolve, reject) => {
+    const requestId = crypto.randomUUID();
+    const timer = setTimeout(() => {
+      pendingDesktopActions.delete(requestId);
+      reject(new Error('Desktop action timed out. Check that the agent is running in your signed-in desktop session.'));
+    }, 20000);
+    pendingDesktopActions.set(requestId, { deviceId: `device-${device.deviceName.toLowerCase()}`, resolve, reject, timer });
+    device.ws.send(JSON.stringify({ type: 'DISCORD_ACTION', requestId, action, value }));
+  });
+}
 
 // Helper to hash passwords
 function hashPassword(password) {
@@ -150,6 +165,7 @@ wss.on("connection", async (ws, req) => {
   if (clientType === "dashboard") {
     ws.authenticatedDevices = new Set(); // Track which devices this dashboard can access
     ws.pendingPlans = new Map();
+    ws.pendingDiscord = null;
     ws.userId = null;
     let sessionExpiryTimer;
 
@@ -284,6 +300,10 @@ wss.on("connection", async (ws, req) => {
           }));
           return;
         }
+        if (activeDiscordWorkflows.has(deviceId)) {
+          ws.send(JSON.stringify({ type: 'ERROR', message: 'A desktop workflow is using this device. Finish or cancel it first.' }));
+          return;
+        }
 
         const targetDevice = devices.get(deviceId);
         if (!targetDevice || targetDevice.status !== "online") return;
@@ -307,6 +327,10 @@ wss.on("connection", async (ws, req) => {
             type: "ERROR",
             message: "Not authenticated for this device"
           }));
+          return;
+        }
+        if (activeDiscordWorkflows.has(deviceId)) {
+          ws.send(JSON.stringify({ type: 'ERROR', message: 'A desktop workflow is using this device. Finish or cancel it first.' }));
           return;
         }
 
@@ -386,6 +410,105 @@ wss.on("connection", async (ws, req) => {
         })();
       }
 
+      if (data.type === 'START_DISCORD_WORKFLOW') {
+        const flow = ws.pendingDiscord;
+        if (!flow || flow.id !== data.workflowId || flow.deviceName !== data.deviceName || flow.stage !== 'preview' || flow.expiresAt < Date.now()) {
+          ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'Discord request expired. Enter it again.' }));
+          return;
+        }
+        const device = devices.get(flow.deviceId);
+        if (!ws.authenticatedDevices.has(flow.deviceId) || !device || device.status !== 'online' || !device.supportsDiscordDm) {
+          ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'The device or Discord workflow is unavailable.' }));
+          return;
+        }
+        if (activeDiscordWorkflows.has(flow.deviceId)) {
+          ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'A desktop workflow is already running on this device.' }));
+          return;
+        }
+        if (pendingAudits.get(flow.deviceId)?.length) {
+          ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'A command is still running on this device. Try again when it finishes.' }));
+          return;
+        }
+        activeDiscordWorkflows.set(flow.deviceId, flow);
+        flow.stage = 'running';
+        void (async () => {
+          let frame;
+          try {
+            for (const [action, label] of [['find', 'Finding the recipient'], ['open', 'Opening the conversation'], ['draft', 'Preparing the message']]) {
+              if (flow.cancelled) throw new Error('Workflow cancelled.');
+              ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName, message: label }));
+              frame = await requestDesktopAction(device, action, action === 'find' ? flow.recipient : action === 'draft' ? flow.message : undefined);
+              if (flow.cancelled) throw new Error('Workflow cancelled.');
+              const check = await verifyDiscordScreen(action, flow.recipient, flow.message, frame, process.env.GROQ_API_KEY);
+              if (!check.ok) throw new Error(`${label} could not be verified: ${check.reason}`);
+            }
+            flow.stage = 'ready';
+            flow.expiresAt = Date.now() + 2 * 60 * 1000;
+            flow.readyTimer = setTimeout(() => {
+              if (flow.stage !== 'ready') return;
+              flow.stage = 'expired';
+              activeDiscordWorkflows.delete(flow.deviceId);
+              if (ws.pendingDiscord === flow) ws.pendingDiscord = null;
+              if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', deviceName: flow.deviceName,
+                error: 'The prepared message expired. Start again to get a fresh screen check.' }));
+            }, 2 * 60 * 1000);
+            ws.send(JSON.stringify({ type: 'WORKFLOW_READY', deviceName: flow.deviceName, workflowId: flow.id,
+              recipient: flow.recipient, message: flow.message, frame }));
+          } catch (error) {
+            flow.stage = 'failed';
+            activeDiscordWorkflows.delete(flow.deviceId);
+            ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', deviceName: flow.deviceName, error: error.message, frame }));
+          }
+        })();
+      }
+
+      if (data.type === 'CONFIRM_DISCORD_SEND') {
+        const flow = ws.pendingDiscord;
+        if (!flow || flow.id !== data.workflowId || flow.deviceName !== data.deviceName || flow.stage !== 'ready' || flow.expiresAt < Date.now()) {
+          ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'The prepared message expired. Start again.' }));
+          return;
+        }
+        const device = devices.get(flow.deviceId);
+        if (!ws.authenticatedDevices.has(flow.deviceId) || !device || device.status !== 'online') {
+          ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'The device is offline. Start again when it reconnects.' }));
+          return;
+        }
+        clearTimeout(flow.readyTimer);
+        flow.stage = 'sending';
+        void (async () => {
+          let sendAttempted = false;
+          try {
+            ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName, message: 'Checking the draft again' }));
+            const before = await requestDesktopAction(device, 'observe');
+            const draftCheck = await verifyDiscordScreen('draft', flow.recipient, flow.message, before, process.env.GROQ_API_KEY);
+            if (!draftCheck.ok) throw new Error(`The draft changed: ${draftCheck.reason}`);
+            sendAttempted = true;
+            await requestDesktopAction(device, 'send');
+            flow.stage = 'sent';
+            const after = await requestDesktopAction(device, 'observe');
+            const sentCheck = await verifyDiscordScreen('send', flow.recipient, flow.message, after, process.env.GROQ_API_KEY);
+            ws.send(JSON.stringify({ type: 'WORKFLOW_DONE', deviceName: flow.deviceName,
+              message: sentCheck.ok ? `Message sent to ${flow.recipient}.` : `Send key pressed; delivery could not be verified: ${sentCheck.reason}` }));
+          } catch (error) {
+            ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', deviceName: flow.deviceName,
+              error: sendAttempted ? `Send was attempted; delivery could not be verified: ${error.message}` : error.message }));
+          } finally {
+            activeDiscordWorkflows.delete(flow.deviceId);
+            ws.pendingDiscord = null;
+          }
+        })();
+      }
+
+      if (data.type === 'CANCEL_DISCORD_WORKFLOW' && ws.pendingDiscord?.id === data.workflowId) {
+        if (ws.pendingDiscord.stage === 'sending') return;
+        ws.pendingDiscord.cancelled = true;
+        clearTimeout(ws.pendingDiscord.readyTimer);
+        if (ws.pendingDiscord.stage !== 'running' && ws.pendingDiscord.stage !== 'sending') {
+          activeDiscordWorkflows.delete(ws.pendingDiscord.deviceId);
+        }
+        ws.pendingDiscord = null;
+      }
+
       if (data.type === "PLAN") {
         if (typeof data.deviceName !== 'string' || typeof data.command !== 'string' || !data.command.trim()) return;
         const deviceId = `device-${data.deviceName.toLowerCase()}`;
@@ -395,6 +518,11 @@ wss.on("connection", async (ws, req) => {
             type: "ERROR",
             message: "Not authenticated for this device"
           }));
+          return;
+        }
+        if (activeDiscordWorkflows.has(deviceId)) {
+          ws.send(JSON.stringify({ type: 'PLAN_ERROR', deviceName: data.deviceName,
+            error: 'A desktop workflow is using this device. Finish or cancel it first.' }));
           return;
         }
 
@@ -409,6 +537,16 @@ wss.on("connection", async (ws, req) => {
         }
 
         try {
+          if (mayBeDiscordMessage(data.command)) {
+            if (!targetDevice.supportsDiscordDm) throw new Error('Discord messaging requires the updated Windows agent. See Setup to install it.');
+            const extracted = await extractDiscordMessage(data.command, process.env.GROQ_API_KEY);
+            const id = crypto.randomUUID();
+            ws.pendingDiscord = { id, deviceId, deviceName: data.deviceName, ...extracted,
+              stage: 'preview', expiresAt: Date.now() + 5 * 60 * 1000, cancelled: false };
+            ws.send(JSON.stringify({ type: 'WORKFLOW_PREVIEW', deviceName: data.deviceName,
+              workflowId: id, ...extracted }));
+            return;
+          }
           const plan = await generatePlan(
             data.command,
             targetDevice.platform && targetDevice.platform !== "unknown" ? targetDevice.platform : "win32",
@@ -631,6 +769,16 @@ wss.on("connection", async (ws, req) => {
           ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: data.deviceName, error: 'This agent does not support storage scans. Update and restart it on the device.' }));
           return;
         }
+        const scope = ['home', 'drive', 'all-drives'].includes(data.scope) ? data.scope : 'home';
+        if (scope !== 'home' && !targetDevice.supportsDriveScan) {
+          ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: data.deviceName,
+            error: 'This agent can only scan your user folders. Update and restart it to scan other drives.' }));
+          return;
+        }
+        if (scope === 'drive' && (typeof data.drive !== 'string' || !/^(?:[A-Z]:\\|\/)$/i.test(data.drive))) {
+          ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: data.deviceName, error: 'Select a valid drive.' }));
+          return;
+        }
         const requestId = crypto.randomUUID();
         const timer = setTimeout(() => {
           pendingStorageScans.delete(requestId);
@@ -639,7 +787,8 @@ wss.on("connection", async (ws, req) => {
           }
         }, 20000);
         pendingStorageScans.set(requestId, { client: ws, deviceId, timer });
-        targetDevice.ws.send(JSON.stringify({ type: 'SCAN_STORAGE', requestId }));
+        targetDevice.ws.send(JSON.stringify({ type: 'SCAN_STORAGE', requestId, scope,
+          drive: scope === 'drive' ? data.drive.toUpperCase() : undefined }));
       }
 
       // File transfer - Browse files
@@ -714,6 +863,13 @@ wss.on("connection", async (ws, req) => {
 
     ws.on("close", () => {
       clearTimeout(sessionExpiryTimer);
+      if (ws.pendingDiscord) {
+        ws.pendingDiscord.cancelled = true;
+        clearTimeout(ws.pendingDiscord.readyTimer);
+        if (ws.pendingDiscord.stage !== 'running' && ws.pendingDiscord.stage !== 'sending') {
+          activeDiscordWorkflows.delete(ws.pendingDiscord.deviceId);
+        }
+      }
       dashboardClients.delete(ws);
       for (const [requestId, pending] of pendingStorageScans) {
         if (pending.client === ws) {
@@ -817,8 +973,12 @@ wss.on("connection", async (ws, req) => {
     if (data.type === "HEARTBEAT") {
       device.lastSeen = Date.now();
       const supportsStorageScan = Array.isArray(data.capabilities) && data.capabilities.includes('storage-scan-v1');
-      if (device.supportsStorageScan !== supportsStorageScan) {
+      const supportsDriveScan = Array.isArray(data.capabilities) && data.capabilities.includes('storage-scan-v2');
+      const supportsDiscordDm = Array.isArray(data.capabilities) && data.capabilities.includes('discord-dm-v1');
+      if (device.supportsStorageScan !== supportsStorageScan || device.supportsDriveScan !== supportsDriveScan || device.supportsDiscordDm !== supportsDiscordDm) {
         device.supportsStorageScan = supportsStorageScan;
+        device.supportsDriveScan = supportsDriveScan;
+        device.supportsDiscordDm = supportsDiscordDm;
         broadcastDevices();
       }
       // Update platform info if provided
@@ -900,8 +1060,20 @@ wss.on("connection", async (ws, req) => {
           pending.client.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: device.deviceName,
             files, folders, scannedFiles: data.scannedFiles || 0,
             scannedDirectories: data.scannedDirectories || 0, truncated: data.truncated === true,
+            drives: Array.isArray(data.drives) ? data.drives.filter(drive => typeof drive === 'string' && /^[A-Z]:\\$|^\/$/i.test(drive)).slice(0, 26) : [],
             error: typeof data.error === 'string' ? data.error.slice(0, 300) : undefined }));
         }
+      }
+    }
+
+    if (data.type === 'DISCORD_ACTION_RESULT' && typeof data.requestId === 'string') {
+      const pending = pendingDesktopActions.get(data.requestId);
+      if (pending && pending.deviceId === deviceId) {
+        clearTimeout(pending.timer);
+        pendingDesktopActions.delete(data.requestId);
+        if (typeof data.error === 'string') pending.reject(new Error(data.error.slice(0, 300)));
+        else if (typeof data.frame === 'string' && data.frame.length <= 11_200_000) pending.resolve(data.frame);
+        else pending.reject(new Error('The agent returned an invalid screenshot.'));
       }
     }
 
@@ -982,6 +1154,13 @@ wss.on("connection", async (ws, req) => {
   ws.on("close", () => {
     if (device.ws !== ws) return;
     device.status = "offline";
+    for (const [requestId, pending] of pendingDesktopActions) {
+      if (pending.deviceId === deviceId) {
+        clearTimeout(pending.timer);
+        pendingDesktopActions.delete(requestId);
+        pending.reject(new Error('Device disconnected during the desktop workflow.'));
+      }
+    }
     for (const [requestId, pending] of pendingStorageScans) {
       if (pending.deviceId === deviceId) {
         clearTimeout(pending.timer);
@@ -1287,6 +1466,8 @@ async function broadcastDevicesToDashboard(dashboardWs) {
         status: live?.status === 'online' ? 'online' : 'offline',
         authenticated: dashboardWs.authenticatedDevices.has(record.id),
         supportsStorageScan: live?.supportsStorageScan === true,
+        supportsDriveScan: live?.supportsDriveScan === true,
+        supportsDiscordDm: live?.supportsDiscordDm === true,
         platform: live?.platform || record.platform,
       };
     });

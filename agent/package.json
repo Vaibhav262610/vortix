@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node agent.js",
-    "test": "node --test test/storage-scan.test.js"
+    "test": "node --test test/storage-scan.test.js test/desktop-control.test.js"
   },
   "keywords": [],
   "author": "",

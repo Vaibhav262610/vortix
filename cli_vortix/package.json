@@ -1,6 +1,6 @@
 {
   "name": "vortix",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "AI-powered remote OS control system with natural language commands, real-time monitoring, and modern web dashboard",
   "main": "index.js",
   "bin": {
@@ -56,6 +56,7 @@
     "agent/agent.js",
     "agent/auth.js",
     "agent/storage-scan.js",
+    "agent/desktop-control.js",
     "scripts/postinstall.js",
     "README.md"
   ],

@@ -6,6 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const screenshot = require("screenshot-desktop");
 const { scanStorage } = require('./storage-scan');
+const { discordAction } = require('./desktop-control');
 
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
@@ -155,7 +156,7 @@ function startAgent() {
         JSON.stringify({
           type: "HEARTBEAT",
           platform: PLATFORM,
-          capabilities: ['storage-scan-v1']
+          capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v1'] : [])]
         })
       );
 
@@ -168,7 +169,7 @@ function startAgent() {
             JSON.stringify({
               type: "HEARTBEAT",
               platform: PLATFORM,
-              capabilities: ['storage-scan-v1']
+              capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v1'] : [])]
             })
           );
         }
@@ -448,18 +449,26 @@ function startAgent() {
           });
         }
 
-        // Read-only scan of common user folders for storage troubleshooting.
+        // Read-only scan of user folders or accessible drive roots.
         if (data.type === 'SCAN_STORAGE' && typeof data.requestId === 'string') {
           if (storageScanRunning) {
             ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', requestId: data.requestId, error: 'A storage scan is already running.' }));
           } else {
             storageScanRunning = true;
-            scanStorage().then(result => {
+            scanStorage({ scope: data.scope || 'home', drive: data.drive }).then(result => {
               if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', requestId: data.requestId, ...result }));
             }).catch(error => {
               if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', requestId: data.requestId, error: error.message }));
             }).finally(() => { storageScanRunning = false; });
           }
+        }
+
+        if (data.type === 'DISCORD_ACTION' && typeof data.requestId === 'string') {
+          discordAction(data.action, data.value).then(frame => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'DISCORD_ACTION_RESULT', requestId: data.requestId, frame }));
+          }).catch(error => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'DISCORD_ACTION_RESULT', requestId: data.requestId, error: error.message }));
+          });
         }
 
         // File browsing

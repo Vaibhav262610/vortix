@@ -3,3 +3,4 @@
 **/.env
 **/.env.local
 backend/data/
+cli_vortix/*.tgz
