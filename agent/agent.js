@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const screenshot = require("screenshot-desktop");
 const { scanStorage } = require('./storage-scan');
-const { discordAction } = require('./desktop-control');
+const { discordAction, desktopAction } = require('./desktop-control');
 
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
@@ -156,7 +156,7 @@ function startAgent() {
         JSON.stringify({
           type: "HEARTBEAT",
           platform: PLATFORM,
-          capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v2'] : [])]
+          capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v2', 'desktop-intelligence-v1'] : [])]
         })
       );
 
@@ -169,7 +169,7 @@ function startAgent() {
             JSON.stringify({
               type: "HEARTBEAT",
               platform: PLATFORM,
-              capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v2'] : [])]
+              capabilities: ['storage-scan-v1', 'storage-scan-v2', ...(IS_WINDOWS ? ['discord-dm-v2', 'desktop-intelligence-v1'] : [])]
             })
           );
         }
@@ -468,6 +468,14 @@ function startAgent() {
             if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'DISCORD_ACTION_RESULT', requestId: data.requestId, frame }));
           }).catch(error => {
             if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'DISCORD_ACTION_RESULT', requestId: data.requestId, error: error.message }));
+          });
+        }
+
+        if (data.type === 'DESKTOP_ACTION' && typeof data.requestId === 'string') {
+          desktopAction(data.action, data.value).then(observation => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'DESKTOP_ACTION_RESULT', requestId: data.requestId, ...observation }));
+          }).catch(error => {
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'DESKTOP_ACTION_RESULT', requestId: data.requestId, error: error.message }));
           });
         }
 

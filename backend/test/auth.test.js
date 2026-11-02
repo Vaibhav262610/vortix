@@ -211,6 +211,18 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
       folders: [{ path: '/home/test/Downloads', bytes: 1048576 }],
       scannedFiles: 1, scannedDirectories: 1, truncated: false }));
     assert.equal((await scanResponse).files[0].name, 'large.zip');
+    const oldAgentPlan = waitForMessage(returningDashboard, 'PLAN_ERROR');
+    returningDashboard.send(JSON.stringify({ type: 'PLAN', deviceName: 'TEST',
+      command: 'Open PowerShell, start Codex, and enter /status' }));
+    assert.match((await oldAgentPlan).error, /agent 1\.2\.9/);
+    const desktopCapability = waitForMessage(returningDashboard, 'DEVICES');
+    agent.send(JSON.stringify({ type: 'HEARTBEAT', platform: 'win32',
+      capabilities: ['storage-scan-v1', 'desktop-intelligence-v1'] }));
+    assert.equal((await desktopCapability).devices[0].supportsDesktopIntelligence, true);
+    const screenPlan = waitForMessage(returningDashboard, 'PLAN_PREVIEW');
+    returningDashboard.send(JSON.stringify({ type: 'PLAN', deviceName: 'TEST',
+      command: 'Open PowerShell, start Codex, and enter /status' }));
+    assert.equal((await screenPlan).mode, 'screen-aware');
     returningDashboard.terminate();
 
     const refreshed = waitForMessage(dashboard, 'USER_AUTH_REFRESHED');

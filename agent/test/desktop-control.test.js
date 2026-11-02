@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { discordAction, desktopErrorMessage } = require('../desktop-control');
+const { discordAction, desktopAction, desktopErrorMessage } = require('../desktop-control');
 
 test('desktop action validates text before sending input', async () => {
   await assert.rejects(discordAction('draft', 'line one\nline two'), /Multiline/);
@@ -8,6 +8,13 @@ test('desktop action validates text before sending input', async () => {
   await assert.rejects(discordAction('open'), /Invalid recipient/);
   await assert.rejects(discordAction('select', { x: -1, y: 500 }), /Invalid Discord click location/);
   await assert.rejects(discordAction('select', { x: 500, y: 1001 }), /Invalid Discord click location/);
+});
+
+test('generic screen actions reject malformed input before touching the desktop', async () => {
+  await assert.rejects(desktopAction('launch', 'powershell.exe -Command test'), /program name/);
+  await assert.rejects(desktopAction('type', { text: 'hello\nworld', submit: true }), /Invalid desktop text/);
+  await assert.rejects(desktopAction('click', { x: 1500, y: 500 }), /Invalid desktop position/);
+  await assert.rejects(desktopAction('key', 'alt+f4'), /Invalid desktop key/);
 });
 
 test('PowerShell CLIXML errors are reduced to a useful message', () => {

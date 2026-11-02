@@ -9,6 +9,7 @@ const { selectGroqKey, generateGroqPlan } = require('./lib/groq-planning');
 const { mayBeDiscordMessage, extractDiscordMessage, verifyDiscordScreen } = require('./lib/discord-workflow');
 const { transcribeRecording } = require('./lib/voice');
 const { runVisibleWorkflow } = require('./lib/visible-workflow');
+const { decideDesktopStep } = require('./lib/desktop-intelligence');
 const store = require('./lib/store');
 
 if (!/^sk_(test|live)_/.test(process.env.CLERK_SECRET_KEY || '') && !process.env.CLERK_JWT_KEY) {
@@ -26,6 +27,7 @@ const pendingAudits = new Map();
 const pendingStorageScans = new Map();
 const pendingDesktopActions = new Map();
 const activeDiscordWorkflows = new Map();
+const activeVisibleWorkflows = new Map();
 
 function requestDesktopAction(device, action, value) {
   return new Promise((resolve, reject) => {
@@ -36,6 +38,19 @@ function requestDesktopAction(device, action, value) {
     }, 30000);
     pendingDesktopActions.set(requestId, { deviceId: `device-${device.deviceName.toLowerCase()}`, resolve, reject, timer });
     device.ws.send(JSON.stringify({ type: 'DISCORD_ACTION', requestId, action, value }));
+  });
+}
+
+function requestVisibleAction(device, action, value) {
+  return new Promise((resolve, reject) => {
+    const requestId = crypto.randomUUID();
+    const timer = setTimeout(() => {
+      pendingDesktopActions.delete(requestId);
+      reject(new Error('Desktop action timed out. Check that the agent is running in your signed-in desktop session.'));
+    }, 30000);
+    pendingDesktopActions.set(requestId, { deviceId: `device-${device.deviceName.toLowerCase()}`,
+      kind: 'visible', resolve, reject, timer });
+    device.ws.send(JSON.stringify({ type: 'DESKTOP_ACTION', requestId, action, value }));
   });
 }
 
@@ -327,7 +342,7 @@ wss.on("connection", async (ws, req) => {
           }));
           return;
         }
-        if (activeDiscordWorkflows.has(deviceId)) {
+        if (activeDiscordWorkflows.has(deviceId) || activeVisibleWorkflows.has(deviceId)) {
           ws.send(JSON.stringify({ type: 'ERROR', message: 'A desktop workflow is using this device. Finish or cancel it first.' }));
           return;
         }
@@ -356,7 +371,7 @@ wss.on("connection", async (ws, req) => {
           }));
           return;
         }
-        if (activeDiscordWorkflows.has(deviceId)) {
+        if (activeDiscordWorkflows.has(deviceId) || activeVisibleWorkflows.has(deviceId)) {
           ws.send(JSON.stringify({ type: 'ERROR', message: 'A desktop workflow is using this device. Finish or cancel it first.' }));
           return;
         }
@@ -377,6 +392,54 @@ wss.on("connection", async (ws, req) => {
           return;
         }
         ws.pendingPlans.delete(data.planId);
+
+        if (pendingPlan.kind === 'visible') {
+          const flow = { deviceId, deviceName: targetDevice.deviceName, owner: ws, cancelled: false };
+          activeVisibleWorkflows.set(deviceId, flow);
+          ws.send(JSON.stringify({ type: 'EXECUTION_STARTED', deviceName: targetDevice.deviceName }));
+          void (async () => {
+            const history = [];
+            try {
+              const onFrame = observation => {
+                if (ws.readyState === WebSocket.OPEN && observation?.frame) {
+                  ws.send(JSON.stringify({ type: 'DESKTOP_WORKFLOW_FRAME', deviceName: flow.deviceName,
+                    frame: observation.frame, title: observation.title, process: observation.process }));
+                }
+              };
+              const initial = await requestVisibleAction(targetDevice, 'reset');
+              onFrame(initial);
+              const result = await runVisibleWorkflow({
+                initialFrame: initial, maxSteps: 14, isCancelled: () => flow.cancelled,
+                onFrame, observe: () => requestVisibleAction(targetDevice, 'observe'),
+                act: (action, value) => requestVisibleAction(targetDevice, action, value),
+                decide: async observation => {
+                  const decision = await decideDesktopStep(pendingPlan.goal, observation, history,
+                    process.env.GROQ_API_KEY, undefined, () => requestVisibleAction(targetDevice, 'observe'));
+                  history.push(`${decision.action}: ${decision.reason}`);
+                  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'DESKTOP_WORKFLOW_STATUS',
+                    deviceName: flow.deviceName, message: decision.reason, action: decision.action }));
+                  const frame = decision.observation === observation ? undefined : decision.observation;
+                  if (decision.action === 'done') return { type: 'done', value: decision.reason, frame };
+                  if (decision.action === 'stop') return { type: 'stop', reason: decision.reason, frame };
+                  if (decision.action === 'wait') return { type: 'wait', ms: 1800, frame };
+                  const values = { launch: decision.app,
+                    type: { text: decision.text, submit: decision.submit }, key: decision.key,
+                    click: { x: decision.x, y: decision.y },
+                    scroll: { x: decision.x, y: decision.y, direction: decision.direction } };
+                  return { type: 'act', action: decision.action, value: values[decision.action], frame };
+                },
+              });
+              if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'EXECUTION_FINISHED',
+                deviceName: flow.deviceName, success: true, message: result.value }));
+            } catch (error) {
+              if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'EXECUTION_FINISHED',
+                deviceName: flow.deviceName, error: error.message }));
+            } finally {
+              activeVisibleWorkflows.delete(deviceId);
+            }
+          })();
+          return;
+        }
 
         // Notify dashboard execution started
         ws.send(JSON.stringify({
@@ -448,7 +511,7 @@ wss.on("connection", async (ws, req) => {
           ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'The device or Discord workflow is unavailable.' }));
           return;
         }
-        if (activeDiscordWorkflows.has(flow.deviceId)) {
+        if (activeDiscordWorkflows.has(flow.deviceId) || activeVisibleWorkflows.has(flow.deviceId)) {
           ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'A desktop workflow is already running on this device.' }));
           return;
         }
@@ -555,6 +618,13 @@ wss.on("connection", async (ws, req) => {
         ws.pendingDiscord = null;
       }
 
+      if (data.type === 'CANCEL_VISIBLE_WORKFLOW' && typeof data.deviceName === 'string') {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+        const flow = activeVisibleWorkflows.get(deviceId);
+        if (flow?.owner === ws && ws.authenticatedDevices.has(deviceId)) flow.cancelled = true;
+        return;
+      }
+
       if (data.type === "PLAN") {
         if (typeof data.deviceName !== 'string' || typeof data.command !== 'string' || !data.command.trim()) return;
         const deviceId = `device-${data.deviceName.toLowerCase()}`;
@@ -566,7 +636,7 @@ wss.on("connection", async (ws, req) => {
           }));
           return;
         }
-        if (activeDiscordWorkflows.has(deviceId)) {
+        if (activeDiscordWorkflows.has(deviceId) || activeVisibleWorkflows.has(deviceId)) {
           ws.send(JSON.stringify({ type: 'PLAN_ERROR', deviceName: data.deviceName,
             error: 'A desktop workflow is using this device. Finish or cancel it first.' }));
           return;
@@ -591,6 +661,16 @@ wss.on("connection", async (ws, req) => {
               stage: 'preview', expiresAt: Date.now() + 5 * 60 * 1000, cancelled: false };
             ws.send(JSON.stringify({ type: 'WORKFLOW_PREVIEW', deviceName: data.deviceName,
               workflowId: id, ...extracted }));
+            return;
+          }
+          if (targetDevice.platform === 'win32') {
+            if (!targetDevice.supportsDesktopIntelligence) throw new Error('Screen-aware commands require agent 1.2.9 or newer. See Setup to update the Windows agent.');
+            const goal = data.command.trim().slice(0, 2000);
+            const planId = crypto.randomUUID();
+            ws.pendingPlans.set(planId, { kind: 'visible', deviceId, goal,
+              expiresAt: Date.now() + 5 * 60 * 1000 });
+            ws.send(JSON.stringify({ type: 'PLAN_PREVIEW', deviceName: data.deviceName,
+              planId, mode: 'screen-aware', steps: [{ command: goal }] }));
             return;
           }
           const plan = await generatePlan(
@@ -769,6 +849,7 @@ wss.on("connection", async (ws, req) => {
           if (!targetDevice || targetDevice.status !== "online") {
             return;
           }
+          if (activeDiscordWorkflows.has(deviceId) || activeVisibleWorkflows.has(deviceId)) return;
 
           trackCommand(ws.userId, deviceId, targetDevice.deviceName, command);
 
@@ -915,6 +996,9 @@ wss.on("connection", async (ws, req) => {
           activeDiscordWorkflows.delete(ws.pendingDiscord.deviceId);
         }
       }
+      for (const flow of activeVisibleWorkflows.values()) {
+        if (flow.owner === ws) flow.cancelled = true;
+      }
       dashboardClients.delete(ws);
       for (const [requestId, pending] of pendingStorageScans) {
         if (pending.client === ws) {
@@ -1002,6 +1086,7 @@ wss.on("connection", async (ws, req) => {
   device.ws = ws;
   device.status = "online";
   device.supportsStorageScan = false;
+  device.supportsDesktopIntelligence = false;
   device.lastSeen = Date.now();
 
   console.log(`Device connected: ${deviceName}`);
@@ -1020,10 +1105,13 @@ wss.on("connection", async (ws, req) => {
       const supportsStorageScan = Array.isArray(data.capabilities) && data.capabilities.includes('storage-scan-v1');
       const supportsDriveScan = Array.isArray(data.capabilities) && data.capabilities.includes('storage-scan-v2');
       const supportsDiscordDm = Array.isArray(data.capabilities) && data.capabilities.includes('discord-dm-v2');
-      if (device.supportsStorageScan !== supportsStorageScan || device.supportsDriveScan !== supportsDriveScan || device.supportsDiscordDm !== supportsDiscordDm) {
+      const supportsDesktopIntelligence = Array.isArray(data.capabilities) && data.capabilities.includes('desktop-intelligence-v1');
+      if (device.supportsStorageScan !== supportsStorageScan || device.supportsDriveScan !== supportsDriveScan ||
+          device.supportsDiscordDm !== supportsDiscordDm || device.supportsDesktopIntelligence !== supportsDesktopIntelligence) {
         device.supportsStorageScan = supportsStorageScan;
         device.supportsDriveScan = supportsDriveScan;
         device.supportsDiscordDm = supportsDiscordDm;
+        device.supportsDesktopIntelligence = supportsDesktopIntelligence;
         broadcastDevices();
       }
       // Update platform info if provided
@@ -1111,13 +1199,18 @@ wss.on("connection", async (ws, req) => {
       }
     }
 
-    if (data.type === 'DISCORD_ACTION_RESULT' && typeof data.requestId === 'string') {
+    if ((data.type === 'DISCORD_ACTION_RESULT' || data.type === 'DESKTOP_ACTION_RESULT') && typeof data.requestId === 'string') {
       const pending = pendingDesktopActions.get(data.requestId);
-      if (pending && pending.deviceId === deviceId) {
+      if (pending && pending.deviceId === deviceId &&
+          (pending.kind === 'visible' ? data.type === 'DESKTOP_ACTION_RESULT' : data.type === 'DISCORD_ACTION_RESULT')) {
         clearTimeout(pending.timer);
         pendingDesktopActions.delete(data.requestId);
         if (typeof data.error === 'string') pending.reject(new Error(data.error.slice(0, 300)));
-        else if (typeof data.frame === 'string' && data.frame.length <= 11_200_000) pending.resolve(data.frame);
+        else if (typeof data.frame === 'string' && data.frame.length <= 11_200_000) {
+          pending.resolve(pending.kind === 'visible'
+            ? { frame: data.frame, pid: data.pid, title: String(data.title || '').slice(0, 160),
+              process: String(data.process || '').slice(0, 80) } : data.frame);
+        }
         else pending.reject(new Error('The agent returned an invalid screenshot.'));
       }
     }
@@ -1513,6 +1606,7 @@ async function broadcastDevicesToDashboard(dashboardWs) {
         supportsStorageScan: live?.supportsStorageScan === true,
         supportsDriveScan: live?.supportsDriveScan === true,
         supportsDiscordDm: live?.supportsDiscordDm === true,
+        supportsDesktopIntelligence: live?.supportsDesktopIntelligence === true,
         platform: live?.platform || record.platform,
       };
     });

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, JSX } from "react";
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { useAuth, useUser, UserButton } from "@clerk/nextjs";
 import { quickCommands } from "../../quickCommands";
 import { SystemStatsWidget } from "../../components/SystemStatsWidget";
@@ -19,11 +20,14 @@ type Device = {
 	supportsStorageScan?: boolean;
 	supportsDriveScan?: boolean;
 	supportsDiscordDm?: boolean;
+	supportsDesktopIntelligence?: boolean;
 };
 
 type DiscordWorkflow = { id: string; deviceName: string; recipient: string; message: string;
 	stage: "preview" | "running" | "sending" | "done" | "error";
 	status?: string; frame?: string };
+type DesktopWorkflow = { deviceName: string; status: string; title?: string; frame?: string;
+	stage: "running" | "done" | "error" };
 
 type ApprovalDialog = {
 	isOpen: boolean;
@@ -501,6 +505,8 @@ export default function Home() {
 	const [command, setCommand] = useState("");
 	const [voiceState, setVoiceState] = useState<"idle" | "recording" | "transcribing">("idle");
 	const [voiceStatus, setVoiceStatus] = useState("");
+	const [planMode, setPlanMode] = useState<"commands" | "screen-aware">("commands");
+	const [desktopWorkflow, setDesktopWorkflow] = useState<DesktopWorkflow | null>(null);
 	const voiceRecorderRef = useRef<MediaRecorder | null>(null);
 	const voiceStreamRef = useRef<MediaStream | null>(null);
 	const voiceStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -551,12 +557,14 @@ export default function Home() {
 			setVoiceStatus("Connect a device before giving a command.");
 			return;
 		}
+		if (isPlanning || isExecuting) return;
+		setDesktopWorkflow(null);
 		setIsPlanning(true);
 		setIsExecuting(false);
 		setCommandHistory((prev) => [...prev, spokenCommand]);
 		wsRef.current.send(JSON.stringify({ type: "PLAN", deviceName: selectedDevice, command: spokenCommand }));
 		setCommand("");
-	}, [selectedDevice]);
+	}, [selectedDevice, isPlanning, isExecuting]);
 
 	useEffect(() => { submitVoiceCommandRef.current = submitCommand; }, [submitCommand]);
 
@@ -795,7 +803,17 @@ export default function Home() {
 						setPlanPreview(data.steps);
 						setPlanId(data.planId);
 						setPlanDeviceName(data.deviceName);
+						setPlanMode(data.mode === "screen-aware" ? "screen-aware" : "commands");
 						speak("I have a plan ready. Please review it before I continue.");
+					}
+					if (data.type === "DESKTOP_WORKFLOW_FRAME") {
+						setDesktopWorkflow(current => current && current.deviceName === data.deviceName
+							? { ...current, frame: data.frame, title: data.title } : current);
+					}
+					if (data.type === "DESKTOP_WORKFLOW_STATUS") {
+						setDesktopWorkflow(current => current && current.deviceName === data.deviceName
+							? { ...current, status: data.message } : current);
+						setLogs(prev => [...prev, `[${data.deviceName}] ${data.message}`]);
 					}
 
 					if (data.type === "WORKFLOW_PREVIEW") {
@@ -844,7 +862,10 @@ export default function Home() {
 					if (data.type === "EXECUTION_FINISHED") {
 						setIsExecuting(false);
 						console.log("Execution finished");
-						speak(data.error ? "The command failed." : "The command finished.");
+						setDesktopWorkflow(current => current && current.deviceName === data.deviceName
+							? { ...current, stage: data.error ? "error" : "done",
+								status: data.error || data.message || "Task finished." } : current);
+						speak(data.error ? `The command stopped. ${data.error}` : data.message || "The command finished.");
 					}
 
 					if (data.type === "LOG") {
@@ -949,6 +970,8 @@ export default function Home() {
 					voiceRequestRef.current = null;
 					setVoiceState("idle");
 					setVoiceStatus("Connection lost. Reconnect and record again.");
+						setDesktopWorkflow(current => current?.stage === "running"
+							? { ...current, stage: "error", status: "Connection lost. Reconnect the device and try again." } : current);
 					setPlanPreview([]);
 					setPlanId("");
 					if (disposed) return;
@@ -1624,6 +1647,25 @@ export default function Home() {
 				</div>
 			)}
 
+			{desktopWorkflow && (
+				<div className="fixed bottom-4 right-4 z-50 w-[calc(100vw-2rem)] max-w-sm rounded-2xl border border-emerald-500/25 bg-[#111a1a] p-4 text-white shadow-2xl" role="status">
+					<p className="text-xs font-semibold uppercase tracking-widest text-emerald-400">Screen-aware task</p>
+					<p className="mt-1 truncate text-sm text-white/60">{desktopWorkflow.title || desktopWorkflow.deviceName}</p>
+					<p className={`mt-3 text-sm ${desktopWorkflow.stage === "error" ? "text-red-300" : "text-white/90"}`}>{desktopWorkflow.status}</p>
+					{desktopWorkflow.frame && <Image unoptimized src={`data:image/jpeg;base64,${desktopWorkflow.frame}`}
+						alt="Current device window" width={1120} height={700}
+						className="mt-3 max-h-48 w-full rounded-lg border border-white/10 object-contain" />}
+					<button type="button" className="mt-3 rounded-lg border border-white/20 px-3 py-1.5 text-xs text-white/80 hover:bg-white/10"
+						onClick={() => {
+							if (desktopWorkflow.stage === "running") {
+								wsRef.current?.send(JSON.stringify({ type: "CANCEL_VISIBLE_WORKFLOW", deviceName: desktopWorkflow.deviceName }));
+								setDesktopWorkflow(current => current ? { ...current, status: "Stopping after the current step…" } : current);
+							}
+							else setDesktopWorkflow(null);
+						}}>{desktopWorkflow.stage === "running" ? "Stop task" : "Close"}</button>
+				</div>
+			)}
+
 			{planPreview.length > 0 && (
 				<div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm">
 					<div className="glass rounded-2xl border border-white/10 p-6 sm:p-8 max-w-2xl w-full mx-4 shadow-2xl">
@@ -1646,10 +1688,10 @@ export default function Home() {
 								</div>
 								<div>
 									<h3 className="text-lg font-semibold text-white">
-										AI Generated Plan
+										{planMode === "screen-aware" ? "Screen-aware task" : "AI Generated Plan"}
 									</h3>
 									<p className="text-xs text-emerald-400/80 mt-1">
-										{planPreview.length} steps
+										{planMode === "screen-aware" ? "Vortix will observe each step and verify the result" : `${planPreview.length} steps`}
 									</p>
 								</div>
 							</div>
@@ -1686,6 +1728,8 @@ export default function Home() {
 							</button>
 							<button
 								onClick={() => {
+									if (planMode === "screen-aware") setDesktopWorkflow({ deviceName: planDeviceName,
+										status: "Observing the current window…", stage: "running" });
 									wsRef.current?.send(
 										JSON.stringify({
 											type: "APPROVE_PLAN",
@@ -1698,7 +1742,7 @@ export default function Home() {
 									setPlanId("");
 								}}
 								className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-emerald-500/50">
-								Approve & Execute
+									{planMode === "screen-aware" ? "Start screen-aware task" : "Approve & Execute"}
 							</button>
 						</div>
 					</div>
