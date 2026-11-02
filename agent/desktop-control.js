@@ -84,7 +84,8 @@ Start-Sleep -Milliseconds 250
 if ([VortixDesktop]::GetForegroundWindow() -ne $discord.MainWindowHandle) { throw 'Discord lost focus. Open it on this desktop and retry.' }
 ${action === 'find' || action === 'open' ? '[VortixDesktop]::Key(0x1B)\nStart-Sleep -Milliseconds 150\n[VortixDesktop]::CtrlK()\nStart-Sleep -Milliseconds 350' : ''}
 ${text ? `[VortixDesktop]::Text('${text.replace(/'/g, "''")}')` : ''}
-${action === 'open' ? 'Start-Sleep -Milliseconds 800' : ''}
+${action === 'find' ? 'Start-Sleep -Milliseconds 1000' : ''}
+${action === 'open' ? 'Start-Sleep -Milliseconds 2500' : ''}
 ${action === 'open' || action === 'send' ? '[VortixDesktop]::Key(0x0D)' : ''}
 Start-Sleep -Milliseconds 700
 } catch {

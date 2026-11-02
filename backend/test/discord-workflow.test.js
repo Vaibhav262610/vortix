@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mayBeDiscordMessage, extractDiscordMessage, verifyDiscordScreen } = require('../lib/discord-workflow');
+const { mayBeDiscordMessage, extractDiscordMessage, verifyDiscordScreen, waitForDiscordSearch } = require('../lib/discord-workflow');
 
 test('Discord requests preserve the explicit recipient and message', async () => {
   assert.equal(mayBeDiscordMessage('open Discord and text my friend claveb07 hello'), true);
@@ -21,7 +21,35 @@ test('screen verification uses a vision model and treats ambiguous screens as fa
     return { data: { choices: [{ message: { content: '{"ok":false,"reason":"Recipient not visible"}' } }] } };
   } };
   assert.deepEqual(await verifyDiscordScreen('open', 'claveb07', 'hello', 'aGVsbG8=', 'test-key', client),
-    { ok: false, reason: 'Recipient not visible' });
+    { ok: false, loading: false, reason: 'Recipient not visible' });
+});
+
+test('search waits for Discord to finish loading before it fails', async () => {
+  const seen = [];
+  const result = await waitForDiscordSearch('loading-frame', 'claven07', 'hello', 'key',
+    async () => 'result-frame', {
+      verify: async (_stage, _recipient, _message, frame) => {
+        seen.push(frame);
+        return frame === 'loading-frame'
+          ? { ok: false, loading: false, reason: "Search results area says 'Searching All Users'" }
+          : { ok: true, loading: false, reason: 'Exact username is visible' };
+      },
+      pause: async ms => { assert.equal(ms, 1500); },
+    });
+  assert.deepEqual(seen, ['loading-frame', 'result-frame']);
+  assert.equal(result.check.ok, true);
+  assert.equal(result.frame, 'result-frame');
+});
+
+test('search does not retry a completed search with the wrong recipient', async () => {
+  let observations = 0;
+  const result = await waitForDiscordSearch('frame', 'claven07', 'hello', 'key',
+    async () => { observations++; return 'later'; }, {
+      verify: async () => ({ ok: false, loading: false, reason: 'Only another username is visible' }),
+      pause: async () => {},
+    });
+  assert.equal(observations, 0);
+  assert.equal(result.check.ok, false);
 });
 
 test('recipient or message changed by AI is rejected', async () => {
