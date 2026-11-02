@@ -136,8 +136,11 @@ function startAgent() {
   let heartbeatInterval = null;
   let reconnectTimeout = null;
   let isIntentionalClose = false;
+  let paused = config.paused === true;
+  let resumeAfterClose = false;
 
   function connect() {
+    if (paused) return;
     console.log(`Attempting connection to: ${BACKEND_URL}`);
     ws = new WebSocket(BACKEND_URL, {
       headers: { Authorization: `Basic ${Buffer.from(token).toString('base64')}` }
@@ -192,8 +195,10 @@ function startAgent() {
         screenCaptureInterval = null;
       }
 
-      // Auto-reconnect unless it was intentional
-      if (!isIntentionalClose) {
+      if (resumeAfterClose && !paused) {
+        resumeAfterClose = false;
+        connect();
+      } else if (!isIntentionalClose && !paused) {
         console.log("Attempting to reconnect in 5 seconds...");
         reconnectTimeout = setTimeout(() => {
           console.log("Reconnecting...");
@@ -737,12 +742,61 @@ function startAgent() {
     }
   }
 
-  // The per-user named pipe disappears when the agent exits. It prevents a
-  // manual launch and the sign-in launcher from running competing agents.
+  function localStatus() {
+    return { state: paused ? 'paused' : ws?.readyState === WebSocket.OPEN ? 'online'
+      : ws?.readyState === WebSocket.CONNECTING ? 'connecting' : 'offline',
+      deviceName, pid: process.pid };
+  }
+
+  function localCommand(action) {
+    if (action === 'pause' && !paused) {
+      paused = true;
+      resumeAfterClose = false;
+      config.paused = true;
+      saveConfig(config);
+      if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
+      if (ws && ws.readyState !== WebSocket.CLOSED) ws.terminate();
+    } else if (action === 'resume' && paused) {
+      paused = false;
+      config.paused = false;
+      saveConfig(config);
+      if (ws && ws.readyState !== WebSocket.CLOSED) resumeAfterClose = true;
+      else connect();
+    }
+    return localStatus();
+  }
+
+  // The per-user named pipe disappears when the agent exits. It prevents
+  // duplicate agents and lets the tray read status or pause the connection.
   if (IS_WINDOWS) {
     const userKey = crypto.createHash('sha256').update(os.homedir().toLowerCase()).digest('hex').slice(0, 16);
     const pipeName = String.raw`\\.\pipe\vortix-agent-${userKey}`;
-    const instance = net.createServer(socket => socket.destroy());
+    const instance = net.createServer(socket => {
+      let input = '';
+      let handled = false;
+      socket.setEncoding('utf8');
+      socket.setTimeout(2000, () => socket.destroy());
+      socket.on('error', () => {});
+      socket.on('data', chunk => {
+        if (handled) return;
+        input += chunk;
+        if (input.length > 100 || !input.includes('\n')) {
+          if (input.length > 100) socket.destroy();
+          return;
+        }
+        const action = input.split('\n', 1)[0].trim();
+        if (!['status', 'pause', 'resume', 'quit'].includes(action)) { socket.destroy(); return; }
+        handled = true;
+        const result = action === 'status' || action === 'quit' ? localStatus() : localCommand(action);
+        socket.end(JSON.stringify(result) + '\n');
+        if (action === 'quit') {
+          isIntentionalClose = true;
+          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+          if (ws && ws.readyState !== WebSocket.CLOSED) ws.terminate();
+          setTimeout(() => process.exit(0), 150);
+        }
+      });
+    });
     instance.once('error', error => {
       if (error.code === 'EADDRINUSE') {
         console.log('Vortix is already running for this Windows user.');
@@ -751,7 +805,7 @@ function startAgent() {
       console.error('Could not start the Vortix agent:', error.message);
       process.exitCode = 1;
     });
-    instance.listen(pipeName, connect);
+    instance.listen(pipeName, () => { if (!paused) connect(); });
   } else {
     connect();
   }
@@ -850,7 +904,13 @@ function checkAutoStartStatus() {
 
 function enableAutoStartWindows() {
   const startupPath = windowsStartupPath();
-  const commandLine = `"${process.execPath}" "${__filename}" start`;
+  const trayPath = path.join(__dirname, '..', 'tray', 'VortixTray.exe');
+  const userKey = crypto.createHash('sha256').update(os.homedir().toLowerCase()).digest('hex').slice(0, 16);
+  const pipeShort = `vortix-agent-${userKey}`;
+  const version = fs.existsSync(trayPath) ? JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version : '';
+  const commandLine = fs.existsSync(trayPath)
+    ? `"${trayPath}" "${__filename}" "${process.execPath}" "${pipeShort}" "${version}"`
+    : `"${process.execPath}" "${__filename}" start`;
   const script = `Set WshShell = CreateObject("WScript.Shell")\r\nWshShell.Run "${commandLine.replace(/"/g, '""')}", 0, False\r\n`;
   fs.mkdirSync(path.dirname(startupPath), { recursive: true });
   fs.writeFileSync(startupPath, script);

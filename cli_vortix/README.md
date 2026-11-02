@@ -28,8 +28,9 @@ The npm registry currently has version 1.2.3. For all-drive scans and screen-awa
 git clone https://github.com/Vaibhav262610/vortix.git
 cd vortix/cli_vortix
 npm pack
-npm install -g ./vortix-1.2.10.tgz
+npm install -g ./vortix-1.2.11.tgz
 vortix enable-autostart
+vortix tray
 ```
 
 If you already have a clone, pull the latest changes instead of cloning again. The updated CLI uses the existing password saved for that computer account.
@@ -42,10 +43,11 @@ If you already have a clone, pull the latest changes instead of cloning again. T
 vortix login
 ```
 
-2. **Start the agent quietly on Windows and at each sign-in:**
+2. **Start the Windows tray app quietly and at each sign-in:**
 
 ```bash
 vortix enable-autostart
+vortix tray
 ```
 
 3. **Access the dashboard:** Visit
@@ -59,6 +61,7 @@ That's it! No backend setup required - everything runs in the cloud.
 | -------------- | ------------------------------------- |
 | `vortix login` | Authenticate and register your device |
 | `vortix start` | Start the agent on current machine    |
+| `vortix tray` | Show the Windows tray status window |
 | `vortix enable-autostart` | Start quietly and launch at sign-in on Windows |
 | `vortix disable-autostart` | Remove the sign-in launcher |
 | `vortix status` | Show agent setup and auto-start status |
@@ -101,6 +104,8 @@ Enable automatic agent startup when your computer boots:
 ```bash
 vortix enable-autostart
 ```
+
+The tray icon shows whether the device is online, connecting, or paused. Double-click it for a small status window, or right-click to open the dashboard, pause, resume, start, or quit Vortix. Closing the status window keeps the agent running. Quit stops it until you launch `vortix tray` again or sign in next time.
 
 ### Screen Sharing
 

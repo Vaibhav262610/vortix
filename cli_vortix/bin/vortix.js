@@ -3,6 +3,8 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
+const { spawn } = require('child_process');
 
 const command = process.argv[2];
 
@@ -38,8 +40,8 @@ function showWelcome() {
     console.log('     ' + colors.cyan + '1.' + colors.reset + ' Set device password:');
     console.log('        ' + colors.green + 'vortix login' + colors.reset);
     console.log('');
-    console.log('     ' + colors.cyan + '2.' + colors.reset + ' Start the agent:');
-    console.log('        ' + colors.green + 'vortix start' + colors.reset);
+    console.log('     ' + colors.cyan + '2.' + colors.reset + (process.platform === 'win32' ? ' Start the tray app at sign-in:' : ' Start the agent:'));
+    console.log('        ' + colors.green + (process.platform === 'win32' ? 'vortix enable-autostart' : 'vortix start') + colors.reset);
     console.log('');
     console.log('     ' + colors.cyan + '3.' + colors.reset + ' Open dashboard:');
     console.log('        ' + colors.magenta + colors.bright + 'https://vortixai.vercel.app' + colors.reset);
@@ -53,7 +55,8 @@ function showHelp() {
     console.log('  📚 Available Commands:\n');
     console.log('     vortix login              Set device password');
     console.log('     vortix start              Start the agent');
-    console.log('     vortix enable-autostart   Enable auto-start on system boot');
+    console.log('     vortix tray               Open the Windows tray app');
+    console.log('     vortix enable-autostart   Start automatically at sign-in');
     console.log('     vortix disable-autostart  Disable auto-start');
     console.log('     vortix status             Check agent and auto-start status');
     console.log('     vortix help               Show this help message');
@@ -113,6 +116,27 @@ function runBackend() {
     }
 }
 
+function runTray() {
+    if (process.platform !== 'win32') {
+        console.error('The tray app currently requires Windows.');
+        process.exitCode = 1;
+        return;
+    }
+    const trayPath = path.join(packageRoot, 'tray', 'VortixTray.exe');
+    if (!fs.existsSync(trayPath)) {
+        console.error('The tray app is missing from this Vortix installation.');
+        process.exitCode = 1;
+        return;
+    }
+    const userKey = crypto.createHash('sha256').update(os.homedir().toLowerCase()).digest('hex').slice(0, 16);
+    const pipeName = `vortix-agent-${userKey}`;
+    const version = require(path.join(packageRoot, 'package.json')).version;
+    const child = spawn(trayPath, [agentPath, process.execPath, pipeName, version, '--show'],
+        { detached: true, stdio: 'ignore', windowsHide: true });
+    child.on('error', error => console.error('Could not open Vortix tray:', error.message));
+    child.unref();
+}
+
 switch (command) {
     case 'login':
         runAgent('login');
@@ -120,6 +144,10 @@ switch (command) {
 
     case 'start':
         runAgent('start');
+        break;
+
+    case 'tray':
+        runTray();
         break;
 
     case 'enable-autostart':
