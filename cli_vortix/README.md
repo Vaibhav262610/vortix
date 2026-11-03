@@ -1,198 +1,37 @@
-# Vortix
+# Vortix device package
 
-AI-powered remote OS control system with natural language command execution,
-real-time monitoring, and advanced device management.
+This package runs the Vortix agent on a computer you own or administer. The maintained agent source is in `../agent/`; `npm pack` copies its runtime files here before building the package. The Windows tray and installer are in this directory.
 
-## Features
+## Windows setup
 
-- **AI Command Generation** - Convert natural language to system commands
-- **Real-time System Monitoring** - CPU, Memory, and Disk usage tracking
-- **Storage Rescue** - Find large files and folders on your own connected device
-- **File Transfer** - Upload and download files remotely
-- **Multi-device Control** - Execute commands across multiple devices
-- **Secure Authentication** - Password-protected device access
-- **Auto-start on Boot** - Automatic agent startup
-- **Modern Web Dashboard** - Responsive UI with mobile support
+Install Node.js, then download the matching [Vortix 1.2.13 installer](https://vortixai.vercel.app/downloads/VortixSetup-1.2.13.exe). Sign in to the [dashboard](https://vortixai.vercel.app/dashboard), choose **Add device → Create code**, set a password in the tray app, and enter the code there. The tray shows whether the agent is connected and can pause or quit it.
 
-## Quick Start
-
-### Installation
+The npm registry may still serve an older version. To install this source version, clone the repository and run:
 
 ```bash
-npm install -g vortix
-```
-
-The npm registry currently has version 1.2.3. On Windows, install Node.js and download the [Vortix 1.2.12 installer](https://vortixai.vercel.app/downloads/VortixSetup-1.2.12.exe). It installs the matching agent package and opens the tray app. Set a device password there, then add that computer in the dashboard.
-
-To install the same version from this repository instead, stop any old agent and run:
-
-```bash
-git clone https://github.com/Vaibhav262610/vortix.git
-cd vortix/cli_vortix
+cd cli_vortix
+npm ci
+npm run build:tray
 npm pack
-npm install -g ./vortix-1.2.12.tgz
+npm install -g ./vortix-1.2.13.tgz
 vortix enable-autostart
 vortix tray
 ```
 
-If you already have a clone, pull the latest changes instead of cloning again. The updated CLI uses the existing password saved for that computer account.
-
-To rebuild the Windows download from this repository, run `npm run build:tray` followed by `npm run build:installer` in `cli_vortix`. The installer embeds the package created by `npm pack` and writes the executable and SHA256 checksum to `dashboard/public/downloads`.
-
-### Setup Your Device
-
-1. **Authenticate your device:**
-
-```bash
-vortix login
-```
-
-2. **Start the Windows tray app quietly and at each sign-in:**
-
-```bash
-vortix enable-autostart
-vortix tray
-```
-
-3. **Access the dashboard:** Visit
-   [https://vortixai.vercel.app](https://vortixai.vercel.app)
-
-That's it! No backend setup required - everything runs in the cloud.
+For a terminal-only setup, use `vortix login`, `vortix pair`, then `vortix start`. Paste the code at the prompt. A pairing code is single-use and expires after ten minutes. Existing paired devices reconnect without a new code.
 
 ## Commands
 
-| Command        | Description                           |
-| -------------- | ------------------------------------- |
-| `vortix login` | Authenticate and register your device |
-| `vortix start` | Start the agent on current machine    |
-| `vortix tray` | Show the Windows tray status window |
-| `vortix enable-autostart` | Start quietly and launch at sign-in on Windows |
+| Command | Purpose |
+| --- | --- |
+| `vortix login` | Set the local device password |
+| `vortix pair` | Associate this installation with the signed-in dashboard account |
+| `vortix start` | Run the agent in the current terminal |
+| `vortix tray` | Open the Windows status window |
+| `vortix status` | Inspect local setup and startup status |
+| `vortix enable-autostart` | Start quietly at Windows sign-in |
 | `vortix disable-autostart` | Remove the sign-in launcher |
-| `vortix status` | Show agent setup and auto-start status |
-| `vortix help`  | Show help information                 |
 
-## Use Cases
+Build the Windows download with `npm run build:tray` followed by `npm run build:installer`. The installer and checksum are written under `../dashboard/public/downloads/`.
 
-- **Remote Work** - Control your office computer from home
-- **Server Management** - Monitor and manage remote servers
-- **IT Support** - Help users remotely without screen sharing software
-- **Home Automation** - Control your home PC from anywhere
-- **Development** - Manage multiple development environments
-
-## Architecture
-
-- **Cloud Backend** - Hosted WebSocket server (always online)
-- **Local Agent** - Runs on your devices, executes commands
-- **Web Dashboard** - Modern React/Next.js interface
-- **Secure Connection** - End-to-end encrypted communication
-
-## Example Commands
-
-Try these natural language commands in the dashboard:
-
-```
-"open notepad"
-"show me system information"
-"take a screenshot"
-"list files in downloads folder"
-"shutdown computer in 5 minutes"
-"check disk space"
-```
-
-## Advanced Features
-
-### Auto-start on Boot
-
-Enable automatic agent startup when your computer boots:
-
-```bash
-vortix enable-autostart
-```
-
-The tray icon shows whether the device is online, connecting, or paused. Double-click it for a small status window, or right-click to open the dashboard, pause, resume, start, or quit Vortix. Closing the status window keeps the agent running. Quit stops it until you launch `vortix tray` again or sign in next time.
-
-### Screen Sharing
-
-View your desktop in real-time through the web dashboard.
-
-### File Transfer
-
-Upload and download files directly through the web interface.
-
-### Multi-device Control
-
-Execute the same command across multiple connected devices simultaneously.
-
-## Dashboard Features
-
-- **Command Center** - Execute commands with AI assistance
-- **Device Management** - View and control all connected devices
-- **System Monitoring** - Real-time CPU, memory, and disk usage
-- **File Browser** - Navigate and transfer files
-- **Screen Viewer** - Live desktop streaming
-- **Mobile Support** - Full functionality on mobile devices
-
-## Security
-
-- Password-protected device authentication
-- Secure WebSocket connections (WSS)
-- Command approval system for dangerous operations
-- No data stored on servers (commands executed locally)
-
-## Supported Platforms
-
-- Windows (7, 8, 10, 11)
-- macOS (10.14+)
-- Linux (Ubuntu, CentOS, Debian, etc.)
-
-## Troubleshooting
-
-### Agent won't connect?
-
-1. Check your internet connection
-2. Ensure firewall allows outbound connections
-3. Try restarting the agent: `vortix start`
-
-### Commands not working?
-
-1. Verify device is authenticated and online
-2. Check if the command requires admin privileges
-3. Try simpler commands first
-
-### Need help?
-
-- Visit our [documentation](https://vortixai.vercel.app/setup)
-- Report issues on [GitHub](https://github.com/Vaibhav262610/vortix/issues)
-- Contact support: vaibhavrajpoot2626@gmail.com
-
-## What's New in v1.2.2
-
-- **Streamlined Dashboard** - Removed screen sharing and auto-start features for
-  cleaner UI
-- **Focus on Core Features** - Simplified interface focused on command execution
-  and monitoring
-- **Updated Components** - Latest agent and backend files included
-
-### Previous Updates (v1.2.1)
-
-- **Improved Documentation** - More professional README with better formatting
-- **Enhanced Readability** - Cleaner structure and natural tone
-- **Better User Experience** - Less cluttered documentation
-
-### Previous Updates (v1.2.0)
-
-- **Redesigned Dashboard** - Modern Command Center interface
-- **Mobile Optimization** - Perfect mobile experience
-- **Performance Improvements** - Faster real-time updates
-- **Enhanced UI** - Better navigation and user experience
-- **Cloud-first Architecture** - No backend setup required
-
-## License
-
-MIT License - see
-[LICENSE](https://github.com/Vaibhav262610/vortix/blob/main/LICENSE) for
-details.
-
----
-
-**Made with ❤️ by [Vaibhav Rajpoot](https://github.com/Vaibhav262610)**
+The agent accepts remote shell commands and desktop actions. Run it with a low-privilege OS account and read [the security policy](../SECURITY.md) before using it with sensitive data.

@@ -40,7 +40,7 @@ function loadConfig() {
 
 function saveConfig(config) {
   try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 });
   } catch (err) {
     console.error("Error saving config:", err.message);
   }
@@ -60,13 +60,23 @@ function promptPassword() {
   });
 }
 
+function promptPairingCode() {
+  return new Promise(resolve => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question('Enter the pairing code from your dashboard: ', code => {
+      rl.close();
+      resolve(code.trim());
+    });
+  });
+}
+
 const command = process.argv[2];
 
 if (command === "login") {
   (async () => {
     const password = await promptPassword();
-    if (!password) {
-      console.log("Password is required");
+    if (password.length < 8) {
+      console.log("A password of at least 8 characters is required");
       return;
     }
 
@@ -77,6 +87,28 @@ if (command === "login") {
     console.log("Password saved successfully!");
     console.log("You can now run: vortix start");
     console.log("\nIMPORTANT: Use this same password in the dashboard to access this device.");
+  })();
+  return;
+}
+
+if (command === "pair") {
+  (async () => {
+    const code = process.argv[3] || await promptPairingCode();
+    if (!/^[A-Za-z0-9_-]{24}$/.test(code)) {
+      console.error('Enter the 24-character pairing code shown in your dashboard.');
+      process.exitCode = 1;
+      return;
+    }
+    const config = loadConfig();
+    if (!config.password) {
+      console.error('Set a device password before pairing: vortix login');
+      process.exitCode = 1;
+      return;
+    }
+    if (!config.deviceName) config.deviceName = `${os.hostname().slice(0, 63)}-${crypto.randomBytes(4).toString('hex')}`;
+    config.pairingCode = code;
+    saveConfig(config);
+    console.log(`Pairing code saved for ${config.deviceName}. Start or restart the agent to connect.`);
   })();
   return;
 }
@@ -104,6 +136,7 @@ if (command === "status") {
 console.log("Available commands:");
 console.log("  vortix login             - Set device password");
 console.log("  vortix start             - Start the agent");
+console.log("  vortix pair              - Pair this device with your account");
 console.log("  vortix enable-autostart  - Enable auto-start on system boot");
 console.log("  vortix disable-autostart - Disable auto-start");
 console.log("  vortix status            - Check auto-start status");
@@ -116,7 +149,7 @@ function startAgent() {
     return;
   }
 
-  const deviceName = os.hostname();
+  const deviceName = config.deviceName || os.hostname();
   const deviceToken = `device-${deviceName.toLowerCase()}`;
   const token = `${deviceToken}:${config.password}`;
 
@@ -131,6 +164,8 @@ function startAgent() {
   console.log(`Backend URL: ${BACKEND_URL}`);
 
   let ws = null;
+  let authenticated = false;
+  let pairingRequired = false;
   let screenCaptureInterval = null;
   let storageScanRunning = false;
   let heartbeatInterval = null;
@@ -142,8 +177,10 @@ function startAgent() {
   function connect() {
     if (paused) return;
     console.log(`Attempting connection to: ${BACKEND_URL}`);
+    authenticated = false;
     ws = new WebSocket(BACKEND_URL, {
-      headers: { Authorization: `Basic ${Buffer.from(token).toString('base64')}` }
+      headers: { Authorization: `Basic ${Buffer.from(token).toString('base64')}`,
+        ...(config.pairingCode ? { 'X-Vortix-Pairing': config.pairingCode } : {}) }
     });
 
     ws.on("open", () => {
@@ -182,6 +219,8 @@ function startAgent() {
     });
 
     ws.on("close", (code, reason) => {
+      authenticated = false;
+      if (code === 1008 && String(reason).includes('Pairing required')) pairingRequired = true;
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
@@ -228,6 +267,16 @@ function startAgent() {
     ws.on("message", (message) => {
       try {
         const data = JSON.parse(message.toString());
+
+        if (data.type === 'DEVICE_AUTH_SUCCESS') {
+          authenticated = true;
+          pairingRequired = false;
+          if (config.pairingCode) {
+            delete config.pairingCode;
+            saveConfig(config);
+          }
+          return;
+        }
 
         if (data.type === "EXECUTE") {
           console.log("Agent received EXECUTE:", data.command);
@@ -743,7 +792,7 @@ function startAgent() {
   }
 
   function localStatus() {
-    return { state: paused ? 'paused' : ws?.readyState === WebSocket.OPEN ? 'online'
+    return { state: paused ? 'paused' : authenticated ? 'online' : pairingRequired ? 'pairing'
       : ws?.readyState === WebSocket.CONNECTING ? 'connecting' : 'offline',
       deviceName, pid: process.pid };
   }

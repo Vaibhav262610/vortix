@@ -5,7 +5,8 @@ const { Pool } = require('pg');
 const databaseUrl = process.env.DATABASE_URL;
 const dataFile = path.resolve(process.env.VORTIX_DATA_FILE || path.join(__dirname, '..', 'data', 'state.json'));
 const pool = databaseUrl ? new Pool({ connectionString: databaseUrl }) : null;
-let state = { devices: {}, commands: [] };
+let state = { devices: {}, commands: [], pairings: {}, authAttempts: {}, rescueSettings: {}, rescueSnapshots: {} };
+let authFailureWrites = 0;
 
 function persist() {
   fs.mkdirSync(path.dirname(dataFile), { recursive: true });
@@ -31,12 +32,32 @@ async function init() {
       );
       CREATE INDEX IF NOT EXISTS vortix_commands_owner_time_idx
         ON vortix_commands(owner_id, executed_at DESC);
+      CREATE TABLE IF NOT EXISTS vortix_pairings (
+        code_hash TEXT PRIMARY KEY, owner_id TEXT NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS vortix_auth_attempts (
+        key TEXT PRIMARY KEY, failures INTEGER NOT NULL,
+        window_started TIMESTAMPTZ NOT NULL, locked_until TIMESTAMPTZ
+      );
+      CREATE TABLE IF NOT EXISTS vortix_rescue_settings (
+        device_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        last_scan_at TIMESTAMPTZ
+      );
+      CREATE TABLE IF NOT EXISTS vortix_rescue_snapshots (
+        id BIGSERIAL PRIMARY KEY, device_id TEXT NOT NULL, owner_id TEXT NOT NULL,
+        captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), summary JSONB NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS vortix_rescue_snapshots_device_time_idx
+        ON vortix_rescue_snapshots(device_id, captured_at DESC);
     `);
     return;
   }
   if (fs.existsSync(dataFile)) {
     const parsed = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-    state = { devices: parsed.devices || {}, commands: parsed.commands || [] };
+    state = { devices: parsed.devices || {}, commands: parsed.commands || [],
+      pairings: parsed.pairings || {}, authAttempts: parsed.authAttempts || {},
+      rescueSettings: parsed.rescueSettings || {}, rescueSnapshots: parsed.rescueSnapshots || {} };
   }
 }
 
@@ -49,17 +70,182 @@ async function getDevice(id) {
   return state.devices[id] || null;
 }
 
-async function registerDevice(id, name, passwordHash) {
+async function registerDevice(id, name, passwordHash, ownerId = null) {
   if (pool) {
-    await pool.query('INSERT INTO vortix_devices (id, name, password_hash) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING', [id, name, passwordHash]);
+    await pool.query('INSERT INTO vortix_devices (id, name, password_hash, owner_id) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING', [id, name, passwordHash, ownerId]);
     return getDevice(id);
   }
   if (!state.devices[id]) {
-    state.devices[id] = { id, name, passwordHash, ownerId: null, platform: 'unknown' };
+    state.devices[id] = { id, name, passwordHash, ownerId, platform: 'unknown' };
     persist();
   }
   return state.devices[id];
 }
+
+async function createPairing(codeHash, ownerId, expiresAt) {
+  if (pool) {
+    await pool.query('DELETE FROM vortix_pairings WHERE expires_at < NOW()');
+    await pool.query('INSERT INTO vortix_pairings (code_hash, owner_id, expires_at) VALUES ($1,$2,$3)',
+      [codeHash, ownerId, new Date(expiresAt)]);
+    return;
+  }
+  for (const [hash, item] of Object.entries(state.pairings)) {
+    if (item.expiresAt < Date.now()) delete state.pairings[hash];
+  }
+  state.pairings[codeHash] = { ownerId, expiresAt };
+  persist();
+}
+
+async function consumePairingAndRegister(codeHash, id, name, getPasswordHash) {
+  if (pool) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const pairing = await client.query('SELECT owner_id FROM vortix_pairings WHERE code_hash=$1 AND expires_at > NOW() FOR UPDATE', [codeHash]);
+      if (!pairing.rowCount) { await client.query('ROLLBACK'); return null; }
+      const passwordHash = getPasswordHash();
+      const inserted = await client.query('INSERT INTO vortix_devices (id,name,password_hash,owner_id) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING id',
+        [id, name, passwordHash, pairing.rows[0].owner_id]);
+      if (!inserted.rowCount) { await client.query('ROLLBACK'); return null; }
+      await client.query('DELETE FROM vortix_pairings WHERE code_hash=$1', [codeHash]);
+      await client.query('COMMIT');
+      return getDevice(id);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally { client.release(); }
+  }
+  const pairing = state.pairings[codeHash];
+  if (!pairing || pairing.expiresAt < Date.now() || state.devices[id]) return null;
+  const passwordHash = getPasswordHash();
+  state.devices[id] = { id, name, passwordHash, ownerId: pairing.ownerId, platform: 'unknown' };
+  delete state.pairings[codeHash];
+  persist();
+  return state.devices[id];
+}
+
+async function authAttemptStatus(key) {
+  if (pool) {
+    const result = await pool.query('SELECT locked_until FROM vortix_auth_attempts WHERE key=$1', [key]);
+    return result.rows[0]?.locked_until && new Date(result.rows[0].locked_until).getTime() > Date.now();
+  }
+  return Boolean(state.authAttempts[key]?.lockedUntil > Date.now());
+}
+
+async function recordAuthFailure(key, limit, windowMs = 600000, lockMs = 300000) {
+  if (pool) {
+    if (++authFailureWrites % 100 === 0) {
+      await pool.query("DELETE FROM vortix_auth_attempts WHERE window_started < NOW() - INTERVAL '1 day'");
+    }
+    const result = await pool.query(`INSERT INTO vortix_auth_attempts (key, failures, window_started, locked_until)
+      VALUES ($1,1,NOW(),NULL) ON CONFLICT (key) DO UPDATE SET
+      failures = CASE WHEN vortix_auth_attempts.window_started < NOW() - ($3::bigint * INTERVAL '1 millisecond') THEN 1 ELSE vortix_auth_attempts.failures + 1 END,
+      window_started = CASE WHEN vortix_auth_attempts.window_started < NOW() - ($3::bigint * INTERVAL '1 millisecond') THEN NOW() ELSE vortix_auth_attempts.window_started END,
+      locked_until = CASE WHEN vortix_auth_attempts.window_started < NOW() - ($3::bigint * INTERVAL '1 millisecond') THEN NULL
+        WHEN vortix_auth_attempts.failures + 1 >= $2 THEN NOW() + ($4::bigint * INTERVAL '1 millisecond') ELSE vortix_auth_attempts.locked_until END
+      RETURNING locked_until`, [key, limit, windowMs, lockMs]);
+    return Boolean(result.rows[0]?.locked_until);
+  }
+  const now = Date.now();
+  const prior = state.authAttempts[key];
+  const attempt = !prior || now - prior.windowStarted > windowMs
+    ? { failures: 1, windowStarted: now, lockedUntil: 0 }
+    : { ...prior, failures: prior.failures + 1 };
+  if (attempt.failures >= limit) attempt.lockedUntil = now + lockMs;
+  state.authAttempts[key] = attempt;
+  if (Object.keys(state.authAttempts).length > 5000) {
+    for (const [oldKey, old] of Object.entries(state.authAttempts)) {
+      if (now - old.windowStarted > 86400000) delete state.authAttempts[oldKey];
+    }
+  }
+  persist();
+  return attempt.lockedUntil > now;
+}
+
+async function clearAuthAttempt(key) {
+  if (pool) await pool.query('DELETE FROM vortix_auth_attempts WHERE key=$1', [key]);
+  else if (state.authAttempts[key]) { delete state.authAttempts[key]; persist(); }
+}
+
+async function getRescueState(deviceId, ownerId) {
+  const device = await getDevice(deviceId);
+  if (!device || device.ownerId !== ownerId) return null;
+  if (pool) {
+    const [setting, snapshots] = await Promise.all([
+      pool.query('SELECT enabled,last_scan_at FROM vortix_rescue_settings WHERE device_id=$1 AND owner_id=$2', [deviceId, ownerId]),
+      pool.query('SELECT summary,captured_at FROM vortix_rescue_snapshots WHERE device_id=$1 AND owner_id=$2 ORDER BY captured_at DESC,id DESC LIMIT 2', [deviceId, ownerId]),
+    ]);
+    return { enabled: setting.rows[0]?.enabled === true, lastScanAt: setting.rows[0]?.last_scan_at || null,
+      latest: snapshots.rows[0]?.summary || null, previous: snapshots.rows[1]?.summary || null };
+  }
+  const setting = state.rescueSettings[deviceId];
+  const snapshots = state.rescueSnapshots[deviceId] || [];
+  return { enabled: setting?.enabled === true, lastScanAt: setting?.lastScanAt || null,
+    latest: snapshots[0]?.summary || null, previous: snapshots[1]?.summary || null };
+}
+
+async function setRescueEnabled(deviceId, ownerId, enabled) {
+  const device = await getDevice(deviceId);
+  if (!device || device.ownerId !== ownerId) return false;
+  if (pool) {
+    await pool.query(`INSERT INTO vortix_rescue_settings (device_id,owner_id,enabled) VALUES ($1,$2,$3)
+      ON CONFLICT (device_id) DO UPDATE SET owner_id=$2,enabled=$3`, [deviceId, ownerId, enabled]);
+  } else {
+    const previous = state.rescueSettings[deviceId] || {};
+    state.rescueSettings[deviceId] = { ...previous, ownerId, enabled };
+    persist();
+  }
+  return true;
+}
+
+async function listDueRescueDevices() {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  if (pool) {
+    const rows = await pool.query(`SELECT device_id,owner_id FROM vortix_rescue_settings
+      WHERE enabled=TRUE AND (last_scan_at IS NULL OR last_scan_at < $1)`, [cutoff]);
+    return rows.rows.map(row => ({ deviceId: row.device_id, ownerId: row.owner_id }));
+  }
+  return Object.entries(state.rescueSettings).filter(([, setting]) =>
+    setting.enabled && (!setting.lastScanAt || new Date(setting.lastScanAt) < cutoff))
+    .map(([deviceId, setting]) => ({ deviceId, ownerId: setting.ownerId }));
+}
+
+async function saveRescueSnapshot(deviceId, ownerId, summary) {
+  const device = await getDevice(deviceId);
+  if (!device || device.ownerId !== ownerId) return false;
+  if (pool) {
+    await pool.query('INSERT INTO vortix_rescue_snapshots (device_id,owner_id,summary) VALUES ($1,$2,$3)',
+      [deviceId, ownerId, JSON.stringify(summary)]);
+    await pool.query('UPDATE vortix_rescue_settings SET last_scan_at=NOW() WHERE device_id=$1 AND owner_id=$2', [deviceId, ownerId]);
+  } else {
+    const snapshots = state.rescueSnapshots[deviceId] || [];
+    snapshots.unshift({ capturedAt: new Date().toISOString(), summary });
+    state.rescueSnapshots[deviceId] = snapshots.slice(0, 20);
+    state.rescueSettings[deviceId] = { ...state.rescueSettings[deviceId], ownerId,
+      lastScanAt: new Date().toISOString() };
+    persist();
+  }
+  return true;
+}
+
+async function clearRescueSnapshots(deviceId, ownerId) {
+  const device = await getDevice(deviceId);
+  if (!device || device.ownerId !== ownerId) return false;
+  if (pool) {
+    await pool.query('DELETE FROM vortix_rescue_snapshots WHERE device_id=$1 AND owner_id=$2', [deviceId, ownerId]);
+    await pool.query('UPDATE vortix_rescue_settings SET last_scan_at=NULL,enabled=FALSE WHERE device_id=$1 AND owner_id=$2', [deviceId, ownerId]);
+  } else {
+    delete state.rescueSnapshots[deviceId];
+    if (state.rescueSettings[deviceId]) {
+      state.rescueSettings[deviceId].lastScanAt = null;
+      state.rescueSettings[deviceId].enabled = false;
+    }
+    persist();
+  }
+  return true;
+}
+
+async function close() { if (pool) await pool.end(); }
 
 async function claimDevice(id, userId) {
   if (pool) {
@@ -135,4 +321,7 @@ async function getStats(userId) {
   return { totalCommands: commands.length, successCommands, errorCommands, successRate: commands.length ? successCommands / commands.length * 100 : 0 };
 }
 
-module.exports = { init, getDevice, registerDevice, claimDevice, updatePlatform, listDevices, saveCommand, getHistory, getStats, mode: pool ? 'postgres' : 'file' };
+module.exports = { init, getDevice, registerDevice, claimDevice, updatePlatform, listDevices,
+  createPairing, consumePairingAndRegister, authAttemptStatus, recordAuthFailure, clearAuthAttempt,
+  getRescueState, setRescueEnabled, listDueRescueDevices, saveRescueSnapshot, clearRescueSnapshots,
+  saveCommand, getHistory, getStats, close, mode: pool ? 'postgres' : 'file' };

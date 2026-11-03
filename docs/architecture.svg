@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 170" role="img" aria-labelledby="title desc">
+  <title id="title">Vortix architecture</title>
+  <desc id="desc">Clerk signed-in dashboard connects through the WebSocket backend to a paired device agent.</desc>
+  <rect width="880" height="170" rx="18" fill="#0b1512"/>
+  <g fill="#142a20" stroke="#3c8d67" stroke-width="2">
+    <rect x="30" y="45" width="220" height="80" rx="12"/>
+    <rect x="330" y="45" width="220" height="80" rx="12"/>
+    <rect x="630" y="45" width="220" height="80" rx="12"/>
+  </g>
+  <g fill="#e9f8ef" font-family="Arial,sans-serif" text-anchor="middle">
+    <text x="140" y="80" font-size="17" font-weight="bold">Dashboard</text>
+    <text x="140" y="103" font-size="12">Clerk account</text>
+    <text x="440" y="80" font-size="17" font-weight="bold">Backend</text>
+    <text x="440" y="103" font-size="12">Pairing · routing · history</text>
+    <text x="740" y="80" font-size="17" font-weight="bold">Device agent</text>
+    <text x="740" y="103" font-size="12">Local tray · actions</text>
+  </g>
+  <g stroke="#67d69b" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M262 85h56m-10-9 10 9-10 9"/>
+    <path d="M562 85h56m-10-9 10 9-10 9"/>
+  </g>
+</svg>

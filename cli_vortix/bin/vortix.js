@@ -11,7 +11,6 @@ const command = process.argv[2];
 // When installed via npm, files are in the package directory
 const packageRoot = path.join(__dirname, '..');
 const agentPath = path.join(packageRoot, 'agent', 'agent.js');
-const backendPath = path.join(packageRoot, 'backend', 'server.js');
 
 // Check if this is first run
 const configPath = path.join(os.homedir(), '.vortix-config.json');
@@ -54,6 +53,7 @@ function showHelp() {
     showWelcome();
     console.log('  📚 Available Commands:\n');
     console.log('     vortix login              Set device password');
+    console.log('     vortix pair              Pair this device with your account');
     console.log('     vortix start              Start the agent');
     console.log('     vortix tray               Open the Windows tray app');
     console.log('     vortix enable-autostart   Start automatically at sign-in');
@@ -101,21 +101,6 @@ function runAgent(cmd) {
     }
 }
 
-function runBackend() {
-    console.log('Starting Vortix backend server...');
-
-    // Change to backend directory
-    process.chdir(path.dirname(backendPath));
-
-    // Require and run the backend
-    try {
-        require(backendPath);
-    } catch (err) {
-        console.error('Failed to start backend:', err.message);
-        process.exit(1);
-    }
-}
-
 function runTray() {
     if (process.platform !== 'win32') {
         console.error('The tray app currently requires Windows.');
@@ -140,6 +125,10 @@ function runTray() {
 switch (command) {
     case 'login':
         runAgent('login');
+        break;
+
+    case 'pair':
+        runAgent('pair');
         break;
 
     case 'start':

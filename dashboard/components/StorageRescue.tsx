@@ -33,6 +33,10 @@ export function StorageRescue({ deviceName, online, supported, supportsDriveScan
   const [result, setResult] = useState<ScanResult | null>(null);
   const [drives, setDrives] = useState<string[]>([]);
   const [scope, setScope] = useState("home");
+  const [autopilotEnabled, setAutopilotEnabled] = useState(false);
+  const [autopilotInsight, setAutopilotInsight] = useState("");
+  const [autopilotLastScan, setAutopilotLastScan] = useState<string | null>(null);
+  const [autopilotError, setAutopilotError] = useState("");
 
   useEffect(() => {
     if (!ws || !deviceName) return;
@@ -49,6 +53,30 @@ export function StorageRescue({ deviceName, online, supported, supportsDriveScan
       } catch { /* Ignore unrelated frames. */ }
     };
     ws.addEventListener("message", onMessage);
+    return () => ws.removeEventListener("message", onMessage);
+  }, [ws, deviceName]);
+
+  useEffect(() => {
+    if (!ws || !deviceName || ws.readyState !== WebSocket.OPEN) return;
+    const onMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.deviceName !== deviceName) return;
+        if (data.type === "RESCUE_AUTOPILOT") {
+          if (data.error) { setAutopilotError(data.error); return; }
+          setAutopilotEnabled(data.enabled === true);
+          setAutopilotInsight(data.insight || "");
+          setAutopilotLastScan(data.lastScanAt || null);
+          setAutopilotError("");
+        }
+        if (data.type === "RESCUE_INSIGHT") {
+          setAutopilotInsight(data.insight || "");
+          setAutopilotLastScan(data.lastScanAt || null);
+        }
+      } catch { /* Ignore unrelated frames. */ }
+    };
+    ws.addEventListener("message", onMessage);
+    ws.send(JSON.stringify({ type: "GET_RESCUE_AUTOPILOT", deviceName }));
     return () => ws.removeEventListener("message", onMessage);
   }, [ws, deviceName]);
 
@@ -82,6 +110,24 @@ export function StorageRescue({ deviceName, online, supported, supportsDriveScan
       </button>
       </div>
     </div>
+    {deviceName && <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h3 className="text-sm font-semibold">Read-only Rescue Autopilot</h3>
+          <p className="mt-1 text-xs leading-5 text-white/50">When enabled, scan your user folders about once a day and compare the largest folders. Folder paths and sizes are saved to your account. No files are deleted.</p></div>
+        <button type="button" aria-pressed={autopilotEnabled} disabled={!ws || ws.readyState !== WebSocket.OPEN}
+          onClick={() => ws?.send(JSON.stringify({ type: "SET_RESCUE_AUTOPILOT", deviceName, enabled: !autopilotEnabled }))}
+          className={`rounded-xl px-4 py-2 text-xs font-semibold disabled:opacity-40 ${autopilotEnabled ? "border border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border border-white/15 bg-white/5 text-white/70"}`}>
+          {autopilotEnabled ? "Daily scans on" : "Enable daily scans"}
+        </button>
+      </div>
+      {autopilotLastScan && <p className="mt-3 text-xs text-white/40">Last scan: {new Date(autopilotLastScan).toLocaleString()}</p>}
+      {autopilotInsight && autopilotLastScan && <p className="mt-3 text-sm text-emerald-100">{autopilotInsight}</p>}
+      {autopilotLastScan && <button type="button" className="mt-3 text-xs text-white/50 underline"
+        onClick={() => { if (window.confirm("Turn off daily scans and delete stored scan summaries for this device?")) ws?.send(JSON.stringify({ type: "CLEAR_RESCUE_HISTORY", deviceName })); }}>
+        Clear history and turn off
+      </button>}
+      {autopilotError && <p role="alert" className="mt-3 text-sm text-red-300">{autopilotError}</p>}
+    </div>}
     {!deviceName && <p className="mt-5 text-sm text-white/50">Select an online device to run a scan.</p>}
     {deviceName && !online && <p className="mt-5 text-sm text-white/50">This device is offline. Start its agent to scan storage.</p>}
     {deviceName && online && !supported && <p className="mt-5 rounded-xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm leading-6 text-amber-100">The running agent is an older version without Storage Rescue. Update the <code>vortix</code> CLI on that computer and restart it. <a href="/setup#update-agent" className="font-semibold underline underline-offset-4">Update instructions</a></p>}

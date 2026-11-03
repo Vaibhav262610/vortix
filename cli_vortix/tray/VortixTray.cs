@@ -65,6 +65,7 @@ namespace VortixTray
         private readonly Form window;
         private readonly Label stateLabel;
         private readonly Label detailLabel;
+        private readonly Label deviceLabel;
         private readonly Button actionButton;
         private readonly ToolStripMenuItem pauseItem;
         private readonly ToolStripMenuItem startItem;
@@ -89,7 +90,7 @@ namespace VortixTray
 
             window = new Form();
             window.Text = "Vortix Device";
-            window.ClientSize = new Size(392, 296);
+            window.ClientSize = new Size(392, 342);
             window.FormBorderStyle = FormBorderStyle.FixedSingle;
             window.MaximizeBox = false;
             window.MinimizeBox = false;
@@ -118,7 +119,7 @@ namespace VortixTray
             versionLabel.SetBounds(235, 22, 130, 25);
             window.Controls.Add(versionLabel);
 
-            var deviceLabel = new Label();
+            deviceLabel = new Label();
             deviceLabel.Text = Environment.MachineName;
             deviceLabel.ForeColor = Color.FromArgb(174, 193, 184);
             deviceLabel.Font = new Font("Segoe UI", 9);
@@ -152,11 +153,15 @@ namespace VortixTray
             actionButton.Click += delegate { ToggleAgent(); };
             window.Controls.Add(actionButton);
 
+            var pairButton = MakeButton("Enter pairing code", 22, 266, 348, false);
+            pairButton.Click += delegate { PairDevice(); };
+            window.Controls.Add(pairButton);
+
             var hint = new Label();
             hint.Text = "Closing this window keeps Vortix in the tray.";
             hint.ForeColor = Color.FromArgb(112, 137, 125);
             hint.Font = new Font("Segoe UI", 8);
-            hint.SetBounds(25, 266, 340, 20);
+            hint.SetBounds(25, 314, 340, 20);
             window.Controls.Add(hint);
 
             var menu = new ContextMenuStrip();
@@ -164,6 +169,7 @@ namespace VortixTray
             menu.ForeColor = Color.White;
             menu.Items.Add("Show status", null, delegate { ShowStatus(); });
             menu.Items.Add("Open dashboard", null, delegate { OpenDashboard(); });
+            menu.Items.Add("Enter pairing code", null, delegate { PairDevice(); });
             menu.Items.Add(new ToolStripSeparator());
             pauseItem = new ToolStripMenuItem("Pause agent");
             pauseItem.Click += delegate { ToggleAgent(); };
@@ -261,17 +267,20 @@ namespace VortixTray
         private void Poll()
         {
             string response = ReadAgent("status");
+            string reportedName = Field(response, "deviceName");
+            if (!string.IsNullOrEmpty(reportedName)) deviceLabel.Text = reportedName;
             string next = Field(response, "state") ?? (HasPassword() ? "stopped" : "setup");
             if (next == state) return;
             state = next;
             Color accent = state == "online" ? Color.FromArgb(80, 220, 160)
-                : state == "paused" || state == "setup" ? Color.FromArgb(245, 183, 83)
+                : state == "paused" || state == "setup" || state == "pairing" ? Color.FromArgb(245, 183, 83)
                 : Color.FromArgb(245, 110, 100);
             stateLabel.Text = "●  " + state.ToUpperInvariant();
             stateLabel.ForeColor = accent;
             detailLabel.Text = state == "online" ? "Connected to the Vortix backend"
                 : state == "paused" ? "Remote control is paused"
                 : state == "setup" ? "Set a password to connect this device"
+                : state == "pairing" ? "Create a code in your dashboard, then enter it below"
                 : state == "connecting" ? "Connecting to the backend…"
                 : state == "stopped" ? "The device agent is not running"
                 : "Reconnecting to the backend…";
@@ -325,6 +334,56 @@ namespace VortixTray
                 return File.Exists(config) && Regex.IsMatch(File.ReadAllText(config), "\"password\"\\s*:\\s*\"[^\"]+\"");
             }
             catch { return false; }
+        }
+
+        private void PairDevice()
+        {
+            if (!HasPassword()) { SetupPassword(); return; }
+            using (var dialog = new Form())
+            {
+                dialog.Text = "Pair this device";
+                dialog.ClientSize = new Size(370, 180);
+                dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dialog.MaximizeBox = false;
+                dialog.StartPosition = FormStartPosition.CenterParent;
+                dialog.BackColor = Color.FromArgb(9, 17, 17);
+                dialog.ForeColor = Color.White;
+                var help = new Label { Text = "In the dashboard, choose Add device and create a pairing code. It expires in 10 minutes.", ForeColor = Color.White };
+                help.SetBounds(20, 18, 330, 45);
+                dialog.Controls.Add(help);
+                var code = new TextBox();
+                code.SetBounds(20, 72, 330, 26);
+                dialog.Controls.Add(code);
+                var save = MakeButton("Pair device", 190, 116, 160, true);
+                save.Click += delegate {
+                    if (!Regex.IsMatch(code.Text.Trim(), "^[A-Za-z0-9_-]{24}$")) {
+                        MessageBox.Show(dialog, "Enter the 24-character code from your dashboard.", "Vortix");
+                        return;
+                    }
+                    dialog.DialogResult = DialogResult.OK;
+                };
+                dialog.Controls.Add(save);
+                dialog.AcceptButton = save;
+                if (dialog.ShowDialog(window) != DialogResult.OK) return;
+                try {
+                    var start = new ProcessStartInfo(nodePath, "\"" + agentPath + "\" pair");
+                    start.UseShellExecute = false;
+                    start.CreateNoWindow = true;
+                    start.RedirectStandardInput = true;
+                    using (var process = Process.Start(start)) {
+                        process.StandardInput.WriteLine(code.Text.Trim());
+                        process.StandardInput.Close();
+                        if (!process.WaitForExit(10000)) { process.Kill(); throw new Exception("Pairing setup timed out."); }
+                        if (process.ExitCode != 0) throw new Exception("Could not save the pairing code.");
+                    }
+                    ReadAgent("quit");
+                    for (int attempt = 0; attempt < 20 && ReadAgent("status") != null; attempt++)
+                        System.Threading.Thread.Sleep(100);
+                    StartAgent();
+                    Poll();
+                }
+                catch (Exception error) { MessageBox.Show(window, error.Message, "Vortix pairing"); }
+            }
         }
 
         private void SetupPassword()

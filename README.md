@@ -1,45 +1,64 @@
 # Vortix
 
-Vortix is a remote device control project with a Next.js dashboard, a WebSocket backend, and a device agent. The dashboard uses Clerk for account sign-in. A separate device password unlocks each connected agent.
+[![CI](https://github.com/Vaibhav262610/vortix/actions/workflows/ci.yml/badge.svg)](https://github.com/Vaibhav262610/vortix/actions/workflows/ci.yml)
 
-Storage Rescue can scan common user folders or accessible drives on an online device and lists large files and folders. It is read-only and bounded per drive, so large drives may show partial results. Windows system folders are skipped. The owner can open a result in the file browser. Update the agent and backend together to use it.
+Vortix lets you inspect and control your own computer from a browser. A Windows tray agent connects to a hosted WebSocket backend; a Next.js dashboard provides voice and text commands, screen-aware workflows, file transfer, and read-only storage scans. Account sign-in uses Clerk. AI planning and transcription use Groq on the backend.
 
-For Windows, download the [Vortix 1.2.12 installer](https://vortixai.vercel.app/downloads/VortixSetup-1.2.12.exe) on each computer you want to connect. Install Node.js first. The installer bundles the matching agent package, enables sign-in startup, and opens the tray app. On a new device, set its password in the tray, then add its computer name and password in the dashboard. The tray displays connection state and can pause, resume, start, or quit the agent. Closing its window leaves the tray app running. The device uses the shared hosted backend; it does not need its own server.
+![Architecture: dashboard to backend to device agent](docs/architecture.svg)
 
-The installer has a [SHA256 checksum](https://vortixai.vercel.app/downloads/VortixSetup-1.2.12.exe.sha256) for download verification.
+## Try it on Windows
 
-The npm registry currently serves `vortix@1.2.3`. To install this version from source instead, run `cd cli_vortix`, `npm pack`, `npm install -g ./vortix-1.2.12.tgz`, and `vortix enable-autostart` after cloning or pulling this repository. Run `vortix tray` to show the status window. Use `vortix disable-autostart` to remove the sign-in launcher.
+1. Install [Node.js](https://nodejs.org/en/download) and download [Vortix 1.2.13 for Windows](https://vortixai.vercel.app/downloads/VortixSetup-1.2.13.exe). Verify the [SHA256 checksum](https://vortixai.vercel.app/downloads/VortixSetup-1.2.13.exe.sha256) if desired.
+2. Sign in at [vortixai.vercel.app](https://vortixai.vercel.app). In the dashboard, choose **Add device → Create code**.
+3. In the tray app, set a device password and choose **Enter pairing code**. Paste the code within ten minutes. The device appears in your dashboard after it connects.
 
-The dashboard puts voice commands first. Press **Speak a command**, talk for up to 20 seconds, then press **Stop and send voice**. The backend transcribes the recording with Groq Whisper; the recognized command follows the same plan or message-preview flow as typed commands. Vortix speaks short status replies when browser speech synthesis is available. Typed commands remain available. Recordings are processed in memory and are not saved to command history.
+Existing owned devices registered before pairing codes continue to reconnect with their saved password. For an older unclaimed device, create a code and run `vortix pair` to give it a new random identity. The name-and-password path remains available for legacy recovery.
 
-On Windows, every natural-language command now runs through a bounded screen-aware loop after the user approves the goal. The agent captures the active window, can launch apps, type into them, press keys, click, scroll, or wait, and sends a fresh observation after each action. The backend chooses the next step from the visible result and stops when the result is verified, ambiguous, or the step limit is reached. Interactive tasks such as opening PowerShell, starting Codex, and entering `/status` stay in the same terminal window. The dashboard displays the observed window and progress; screenshots are not saved to command history. Direct shell commands and non-Windows agents retain their existing execution path.
+The Windows download and `cli_vortix` package are built from the same `agent/` source. The npm registry may have an older release; the Windows download above is the matching version for this repository.
 
-Discord direct messages retain their specialized recipient and draft checks. After reviewing the exact recipient and message and clicking **Send this message**, Vortix finds the individual result, verifies the account username and draft, and then sends. Screen awareness depends on what is visible in the active window and may stop when an app hides its content or a target cannot be verified.
+## What it does
 
-## Local setup (PowerShell)
+- **Voice and text control:** speak or type a request. Windows interactive tasks use a bounded screenshot → action → verification loop after you approve the goal. Direct shell commands are also available.
+- **Storage Rescue:** scan accessible drives for large files and folders without deleting them. Opt into daily read-only Rescue Autopilot scans of your user folders to compare growth over time. Scans are bounded and may be partial.
+- **Screen sharing and file transfer:** view a connected desktop and move files through the dashboard.
+- **Discord messaging:** preview the exact recipient and text, then let the workflow verify the visible conversation and draft before sending.
+- **History:** device ownership and command outcomes persist when the backend has PostgreSQL.
 
-Use Node.js 20.19+, 22.12+, or 24+.
+## Run locally
 
-1. In `backend`, run `npm ci`, copy `.env.example` to `.env`, and replace `CLERK_SECRET_KEY` with the secret key from your Clerk application. Run `npm start`.
-2. In `dashboard`, run `npm ci`, copy `.env.example` to `.env.local`, and set the publishable and secret keys from the **same Clerk application**. For a local backend, set `NEXT_PUBLIC_BACKEND_WS=ws://localhost:8080`. Run `npm run dev`.
-3. In `agent`, run `npm ci` and `node agent.js login` to set a device password. In the same PowerShell session, run `$env:BACKEND_URL='ws://localhost:8080'` and then `node agent.js start`.
-4. Open `http://localhost:3000/sign-up` to create an account, or `/auth` to sign in. Open `/dashboard`, click **Add device**, and enter the agent computer name and its device password. The first account to add a device becomes its owner; later visits restore that account's access automatically.
+Use Node.js 22.12+ and one Clerk application for the backend and dashboard.
 
-The deployed dashboard and backend need the same Clerk application configuration. Set the backend's `CLERK_SECRET_KEY` (or `CLERK_JWT_KEY`) and redeploy it when updating the dashboard auth flow. `CLERK_AUTHORIZED_PARTIES` can restrict accepted session tokens to your dashboard origins.
-
-Set `DATABASE_URL` to a PostgreSQL database for the deployed backend. Without it, the backend writes to `backend/data/state.json`; that file survives a process restart but not replacement of an ephemeral Render instance. Keep your database or data file when redeploying, because it contains device ownership and password hashes. AI planning reads `GROQ_API_KEY` only on the backend.
-
-## Project layout
-
-| Directory | Purpose |
+| Terminal | Steps |
 | --- | --- |
-| `dashboard/` | Next.js UI and Clerk account flow |
-| `backend/` | Active WebSocket server (`server.js`) |
-| `agent/` | Device agent |
-| `cli_vortix/` | Packaged CLI and copies of agent/backend code |
+| Backend | `cd backend`, `npm ci`, copy `.env.example` to `.env`, set Clerk credentials, `npm start` |
+| Dashboard | `cd dashboard`, `npm ci`, copy `.env.example` to `.env.local`, set the matching Clerk credentials and `NEXT_PUBLIC_BACKEND_WS=ws://localhost:8080`, `npm run dev` |
+| Agent | `cd agent`, `npm ci`, `node agent.js login`, set `BACKEND_URL=ws://localhost:8080`, `node agent.js pair`, `node agent.js start` |
 
-## Current limitations
+Create the pairing code from the signed-in local dashboard and paste it at the agent prompt. On PowerShell, set the agent URL with `$env:BACKEND_URL='ws://localhost:8080'` in the agent terminal. The backend needs `GROQ_API_KEY` for hosted AI features. Production should use `DATABASE_URL` for durable ownership, pairing, attempt counters, and history. File storage is for a single local process.
 
-Live connections and pending AI plans are held in memory. Device ownership and command outcomes persist in PostgreSQL when `DATABASE_URL` is configured, or in a local JSON file otherwise. The local file mode is intended for one backend process and caps stored command history at 2,000 entries. Device names are currently unique across the whole backend; choose a distinct name for each agent. The packaged CLI under `cli_vortix/` still includes a legacy backend copy; deploy `backend/server.js` for the ownership and history features.
+To build the Windows installer, run `npm ci`, `npm run build:tray`, and `npm run build:installer` inside `cli_vortix/`. `npm pack` copies the maintained agent files into the package at build time.
 
-Run `npm test` in `backend` for WebSocket authentication checks and `npm run build` in `dashboard` for a production build.
+## Verify
+
+Run `npm test` in `backend/` and `agent/`, and `npm run lint && npm run build` in `dashboard/`. GitHub Actions runs these on pushes and pull requests, checks production dependencies with `npm audit`, tests PostgreSQL with an isolated database, and builds the Windows installer.
+
+The [security benchmark](benchmarks/RESULTS.md) replays unknown-device registration and password-guess probes against commit `048f7c0` and this version.
+
+## Security and limits
+
+New agents require a one-time dashboard pairing code. The backend binds them to the signed-in account, stores salted password hashes, and limits failed password attempts by device and network address. Use `wss://` for hosted connections. The tray can pause or quit the agent locally. See [SECURITY.md](SECURITY.md) for the trust boundary and reporting guidance.
+
+Vortix is a remote execution tool. A compromised backend or owner account could send commands to an online agent; screenshot-based checks can also misread an app. Do not run the agent with administrator rights, and keep it paused when remote control is not needed. No remote-control app can guarantee 100% security.
+
+Pending plans and live workflow state are currently held in backend memory and stop on a restart. The UI is not yet covered by component tests. See [ROADMAP.md](ROADMAP.md) for planned work and measured benchmarks.
+
+## Repository
+
+| Path | Purpose |
+| --- | --- |
+| `agent/` | Maintained device agent and tests |
+| `backend/` | Active server, persistence, AI orchestration, and tests |
+| `dashboard/` | Next.js web app |
+| `cli_vortix/` | CLI, Windows tray, and installer build |
+
+Only people who explicitly agree to be named are listed as testers or endorsers. A public GitHub profile is not evidence that its owner reviewed or trusts Vortix.

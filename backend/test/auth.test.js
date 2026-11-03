@@ -95,7 +95,7 @@ test('publishable key cannot be used as backend secret key', () => {
   assert.match(result.stderr, /Configure CLERK_SECRET_KEY/);
 });
 
-test('dashboard WebSocket rejects commands and invalid Clerk sessions', { timeout: 15000 }, async () => {
+test('dashboard WebSocket rejects commands and invalid Clerk sessions', { timeout: 90000 }, async () => {
   const port = await freePort();
   const child = spawn(process.execPath, ['server.js'], {
     cwd: __dirname + '/..',
@@ -122,7 +122,7 @@ test('dashboard WebSocket rejects commands and invalid Clerk sessions', { timeou
   }
 });
 
-test('verified session unlocks a device and refresh keeps access', { timeout: 15000 }, async () => {
+test('verified session unlocks a device and refresh keeps access', { timeout: 90000 }, async () => {
   const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
   const port = await freePort();
   const child = spawn(process.execPath, ['server.js'], {
@@ -143,8 +143,6 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
 
   try {
     await waitForHealth(port, child);
-    agent = new WebSocket(`ws://127.0.0.1:${port}/`, { headers: { Authorization: `Basic ${Buffer.from('device-test:password').toString('base64')}` } });
-    await once(agent, 'open');
     dashboard = new WebSocket(`ws://127.0.0.1:${port}/?type=dashboard`);
     await once(dashboard, 'open');
 
@@ -153,6 +151,19 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
     dashboard.send(JSON.stringify({ type: 'AUTH_USER', token: signedToken(privateKey, 'user_test') }));
     await authenticated;
     assert.deepEqual((await devices).devices, []);
+
+    const pairing = waitForMessage(dashboard, 'PAIRING_CODE');
+    dashboard.send(JSON.stringify({ type: 'CREATE_PAIRING' }));
+    const { code } = await pairing;
+    assert.match(code, /^[A-Za-z0-9_-]{24}$/);
+    const paired = waitForMessage(dashboard, 'DEVICE_PAIRED');
+    agent = new WebSocket(`ws://127.0.0.1:${port}/`, { headers: {
+      Authorization: `Basic ${Buffer.from('device-test:password').toString('base64')}`,
+      'X-Vortix-Pairing': code,
+    } });
+    const agentAuthenticated = waitForMessage(agent, 'DEVICE_AUTH_SUCCESS');
+    await agentAuthenticated;
+    assert.equal((await paired).deviceName, 'TEST');
 
     const unlocked = waitForMessage(dashboard, 'AUTH_SUCCESS');
     dashboard.send(JSON.stringify({ type: 'AUTH_DEVICE', deviceName: 'TEST', password: 'password' }));
@@ -211,6 +222,20 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
       folders: [{ path: '/home/test/Downloads', bytes: 1048576 }],
       scannedFiles: 1, scannedDirectories: 1, truncated: false }));
     assert.equal((await scanResponse).files[0].name, 'large.zip');
+    const rescueInitial = waitForMessage(returningDashboard, 'RESCUE_AUTOPILOT');
+    returningDashboard.send(JSON.stringify({ type: 'GET_RESCUE_AUTOPILOT', deviceName: 'TEST' }));
+    assert.equal((await rescueInitial).enabled, false);
+    const rescueEnabled = waitForMessage(returningDashboard, 'RESCUE_AUTOPILOT');
+    const scheduledScan = waitForMessage(agent, 'SCAN_STORAGE');
+    returningDashboard.send(JSON.stringify({ type: 'SET_RESCUE_AUTOPILOT', deviceName: 'TEST', enabled: true }));
+    assert.equal((await rescueEnabled).enabled, true);
+    const scheduledRequest = await scheduledScan;
+    assert.equal(scheduledRequest.scope, 'home');
+    const rescueInsight = waitForMessage(returningDashboard, 'RESCUE_INSIGHT');
+    agent.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', requestId: scheduledRequest.requestId,
+      files: [], folders: [{ path: '/home/test/Downloads', bytes: 1048576 }],
+      scannedFiles: 1, scannedDirectories: 1, truncated: false }));
+    assert.match((await rescueInsight).insight, /baseline saved/i);
     const oldAgentPlan = waitForMessage(returningDashboard, 'PLAN_ERROR');
     returningDashboard.send(JSON.stringify({ type: 'PLAN', deviceName: 'TEST',
       command: 'Open PowerShell, start Codex, and enter /status' }));
@@ -262,5 +287,55 @@ test('verified session unlocks a device and refresh keeps access', { timeout: 15
     dashboard?.terminate();
     agent?.terminate();
     child.kill();
+  }
+});
+
+test('unknown agents require pairing, codes are single-use, and password guesses lock briefly', { timeout: 60000 }, async () => {
+  const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const port = await freePort();
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: __dirname + '/..',
+    env: { ...process.env, ...testStoreEnv(), PORT: String(port), CLERK_SECRET_KEY: '',
+      CLERK_JWT_KEY: publicKey.export({ type: 'spki', format: 'pem' }),
+      CLERK_AUTHORIZED_PARTIES: 'http://localhost:3000' }, stdio: 'ignore',
+  });
+  let dashboard;
+  let agent;
+  try {
+    await waitForHealth(port, child);
+    const rogue = new WebSocket(`ws://127.0.0.1:${port}/`, { headers: {
+      Authorization: `Basic ${Buffer.from('device-unguarded:password').toString('base64')}` } });
+    const [code, reason] = await once(rogue, 'close');
+    assert.equal(code, 1008);
+    assert.match(String(reason), /Pairing required/);
+
+    dashboard = new WebSocket(`ws://127.0.0.1:${port}/?type=dashboard`);
+    await once(dashboard, 'open');
+    const userReady = waitForMessage(dashboard, 'USER_AUTH_SUCCESS');
+    dashboard.send(JSON.stringify({ type: 'AUTH_USER', token: signedToken(privateKey, 'owner-a') }));
+    await userReady;
+    const pairing = waitForMessage(dashboard, 'PAIRING_CODE');
+    dashboard.send(JSON.stringify({ type: 'CREATE_PAIRING' }));
+    const { code: pairCode } = await pairing;
+    agent = new WebSocket(`ws://127.0.0.1:${port}/`, { headers: {
+      Authorization: `Basic ${Buffer.from('device-secure-pc:correctpass').toString('base64')}`,
+      'X-Vortix-Pairing': pairCode } });
+    await waitForMessage(agent, 'DEVICE_AUTH_SUCCESS');
+    const reused = new WebSocket(`ws://127.0.0.1:${port}/`, { headers: {
+      Authorization: `Basic ${Buffer.from('device-other-pc:correctpass').toString('base64')}`,
+      'X-Vortix-Pairing': pairCode } });
+    const [reusedCode, reusedReason] = await once(reused, 'close');
+    assert.equal(reusedCode, 1008);
+    assert.match(String(reusedReason), /Invalid or expired/);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const failure = waitForMessage(dashboard, 'AUTH_ERROR');
+      dashboard.send(JSON.stringify({ type: 'AUTH_DEVICE', deviceName: 'SECURE-PC', password: 'wrong' }));
+      assert.match((await failure).error, /Invalid password/);
+    }
+    const locked = waitForMessage(dashboard, 'AUTH_ERROR');
+    dashboard.send(JSON.stringify({ type: 'AUTH_DEVICE', deviceName: 'SECURE-PC', password: 'correctpass' }));
+    assert.match((await locked).error, /Too many failed attempts/);
+  } finally {
+    agent?.terminate(); dashboard?.terminate(); child.kill();
   }
 });

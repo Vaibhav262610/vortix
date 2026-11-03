@@ -12,6 +12,7 @@ import { FileTransfer, type FileItem } from "../../components/FileTransfer";
 import { MultiDeviceSelector } from "../../components/MultiDeviceSelector";
 import CommandHistory from "../../components/CommandHistory";
 import { StorageRescue } from "../../components/StorageRescue";
+import { DeviceAccessDialog } from "../../components/DeviceAccessDialog";
 
 type Device = {
 	deviceName: string;
@@ -484,6 +485,8 @@ export default function Home() {
 	const [authDialog, setAuthDialog] = useState<AuthDialog>(null);
 	const [authPassword, setAuthPassword] = useState("");
 	const [claimName, setClaimName] = useState("");
+	const [pairingCode, setPairingCode] = useState("");
+	const [legacyClaim, setLegacyClaim] = useState(false);
 	const [showQuickCommands, setShowQuickCommands] = useState(false);
 
 	// New feature states
@@ -781,6 +784,7 @@ export default function Home() {
 					if (data.type === "AUTH_SUCCESS") {
 						console.log("Device authenticated:", data.deviceName);
 						setAuthDialog(null);
+						setPairingCode("");
 						setAuthPassword("");
 						setClaimName("");
 						setSelectedDevice(data.deviceName);
@@ -789,6 +793,14 @@ export default function Home() {
 					if (data.type === "AUTH_ERROR") {
 						console.error("Auth error:", data.error);
 						alert(`Authentication failed: ${data.error}`);
+					}
+					if (data.type === "PAIRING_CODE") setPairingCode(data.code);
+					if (data.type === "PAIRING_ERROR") alert(data.error);
+					if (data.type === "DEVICE_PAIRED") {
+						setPairingCode("");
+						setAuthDialog(null);
+						setSelectedDevice(data.deviceName);
+						setLogs(prev => [...prev, `[SYSTEM] ${data.deviceName} paired to your account`]);
 					}
 
 					if (data.type === "EXECUTION_STARTED") {
@@ -1394,64 +1406,18 @@ export default function Home() {
 				</div>
 			</div>
 
-			{/* Auth Dialog */}
-			{authDialog?.isOpen && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-					<div className="glass rounded-2xl border border-white/10 p-6 sm:p-8 max-w-md w-full mx-4 shadow-2xl">
-						<h3 className="text-lg font-semibold text-white mb-4">
-							{authDialog.isNew ? "Add your device" : "Enter Device Password"}
-						</h3>
-						{authDialog.isNew ? (
-							<p className="text-sm text-white/60 mb-4">Enter the device name shown by the agent and its password. The first account to add a device becomes its owner.</p>
-						) : <p className="text-sm text-white/60 mb-4">
-							Device:{" "}
-							<span className="font-mono text-emerald-400">
-								{authDialog.deviceName}
-							</span>
-						</p>}
-						{authDialog.isNew && <input
-							type="text"
-							value={claimName}
-							onChange={(e) => setClaimName(e.target.value)}
-							placeholder="Device name, e.g. MY-PC"
-							className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 mb-3"
-							autoFocus
-						/>}
-						<input
-							type="password"
-							value={authPassword}
-							onChange={(e) => setAuthPassword(e.target.value)}
-							onKeyDown={(e) => e.key === "Enter" && handleAuthSubmit()}
-							placeholder="Enter password..."
-							className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 mb-4"
-							autoFocus={!authDialog.isNew}
-						/>
-						<div className="flex gap-3">
-							<button
-								onClick={() => {
-									setAuthDialog(null);
-									setAuthPassword("");
-									setClaimName("");
-								}}
-								className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-white/80 text-sm font-medium hover:bg-white/10 transition">
-								Cancel
-							</button>
-							<button
-								onClick={handleAuthSubmit}
-								disabled={!authPassword || (authDialog.isNew && !claimName.trim())}
-								className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition ${
-									authPassword
-										? "bg-emerald-600 hover:bg-emerald-700 text-white"
-										: "bg-white/5 text-white/40 cursor-not-allowed"
-								}`}>
-								{authDialog.isNew ? "Add Device" : "Unlock"}
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
+			{/* Device access */}
+            {authDialog?.isOpen && <DeviceAccessDialog
+              isNew={authDialog.isNew === true} deviceName={authDialog.deviceName}
+              legacyClaim={legacyClaim} pairingCode={pairingCode} connected={wsConnected}
+              claimName={claimName} password={authPassword}
+              onCreateCode={() => wsRef.current?.send(JSON.stringify({ type: "CREATE_PAIRING" }))}
+              onLegacyClaim={() => setLegacyClaim(true)}
+              onNameChange={setClaimName} onPasswordChange={setAuthPassword}
+              onSubmit={handleAuthSubmit}
+              onClose={() => { setAuthDialog(null); setPairingCode(""); setAuthPassword(""); setClaimName(""); }} />}
 
-			{/* Quick Commands Modal */}
+            {/* Quick Commands Modal */}
 			{showQuickCommands && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
 					<div className="glass rounded-2xl border border-white/10 w-full max-w-6xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
@@ -1630,7 +1596,7 @@ export default function Home() {
 						</div>
 						{discordWorkflow.status && <p role="status" className={`mt-4 text-sm ${discordWorkflow.stage === "error" ? "text-red-300" : "text-emerald-200"}`}>{discordWorkflow.status}</p>}
 						{discordWorkflow.stage === "error" && discordWorkflow.frame && <div className="mt-5"><p className="mb-2 text-xs text-white/50">Screen at the point where the workflow stopped.</p>
-							<img src={`data:image/jpeg;base64,${discordWorkflow.frame}`} alt="Discord screen with the prepared message" className="max-h-80 w-full rounded-xl border border-white/10 object-contain" />
+							<Image unoptimized width={1280} height={720} src={`data:image/jpeg;base64,${discordWorkflow.frame}`} alt="Discord screen with the prepared message" className="max-h-80 w-full rounded-xl border border-white/10 object-contain" />
 						</div>}
 						<div className="mt-6 flex flex-wrap gap-3">
 							{discordWorkflow.stage !== "sending" && <button type="button" className="rounded-xl border border-white/15 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10" onClick={() => {
@@ -1826,7 +1792,7 @@ export default function Home() {
 					<div className="glass rounded-2xl p-5 sm:p-6 h-fit">
 						<div className="flex items-center justify-between gap-2 mb-5">
 							<p className="text-xs font-medium uppercase tracking-widest text-white/45">Your Devices</p>
-							<button type="button" onClick={() => setAuthDialog({ isOpen: true, deviceName: "", isNew: true })}
+						<button type="button" onClick={() => { setPairingCode(""); setLegacyClaim(false); setAuthDialog({ isOpen: true, deviceName: "", isNew: true }); }}
 								className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300">
 								+ Add device
 							</button>
@@ -2304,7 +2270,7 @@ export default function Home() {
 									)}
 								</div>
 							</div>
-							<StorageRescue
+						<StorageRescue
 								key={`${selectedDevice}:${wsConnected}`}
 								deviceName={selectedDevice}
 								online={devices.some((device) => device.deviceName === selectedDevice && device.status === "online")}

@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [backend, agent, dashboard]
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.project }}/package-lock.json
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Test
+        if: matrix.project != 'dashboard'
+        run: npm test
+      - name: Lint and build
+        if: matrix.project == 'dashboard'
+        run: npm run lint && npm run build
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_bG9jYWxob3N0JA==
+          CLERK_SECRET_KEY: sk_test_ci-only
+
+  windows-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cli_vortix/package-lock.json
+      - run: npm ci
+        working-directory: cli_vortix
+      - run: npm audit --omit=dev --audit-level=high
+        working-directory: cli_vortix
+      - run: npm run build:tray
+        working-directory: cli_vortix
+      - run: npm run build:installer
+        working-directory: cli_vortix
+      - name: Verify package contains the maintained agent
+        shell: pwsh
+        run: |
+          $source = (Get-FileHash agent/agent.js -Algorithm SHA256).Hash
+          $package = (Get-FileHash cli_vortix/agent/agent.js -Algorithm SHA256).Hash
+          if ($source -ne $package) { throw 'Packaged agent differs from source' }
+
+  postgres-store:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vortix
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: vortix_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vortix -d vortix_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - run: node --test test/postgres-store.test.js
+        working-directory: backend
+        env:
+          VORTIX_TEST_DATABASE_URL: postgres://vortix:test-only@127.0.0.1:5432/vortix_test

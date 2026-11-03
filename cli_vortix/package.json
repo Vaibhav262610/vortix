@@ -1,13 +1,13 @@
 {
   "name": "vortix",
-  "version": "1.2.12",
+  "version": "1.2.13",
   "description": "AI-powered remote OS control system with natural language commands, real-time monitoring, and modern web dashboard",
   "main": "index.js",
   "bin": {
     "vortix": "bin/vortix.js"
   },
   "scripts": {
-    "postinstall": "node scripts/postinstall.js",
+    "prepack": "node scripts/sync-agent.js",
     "build:tray": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-tray.ps1",
     "build:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1"
   },
@@ -56,19 +56,17 @@
   "files": [
     "bin/vortix.js",
     "agent/agent.js",
-    "agent/auth.js",
     "agent/storage-scan.js",
     "agent/desktop-control.js",
     "tray/VortixTray.exe",
     "tray/VortixTray.cs",
     "tray/VortixTray.ico",
     "scripts/build-tray.ps1",
-    "scripts/postinstall.js",
     "README.md"
   ],
   "dependencies": {
     "axios": "^1.6.0",
-    "ws": "^8.19.0",
-    "screenshot-desktop": "^1.15.0"
+    "screenshot-desktop": "^1.15.8",
+    "ws": "^8.22.1"
   }
 }

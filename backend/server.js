@@ -3,14 +3,15 @@ const WebSocket = require("ws");
 const { verifyToken } = require('@clerk/backend');
 const http = require("http");
 const readline = require("readline");
-const axios = require("axios");
 const crypto = require("crypto");
-const { selectGroqKey, generateGroqPlan } = require('./lib/groq-planning');
+const { generatePlan } = require('./lib/command-planner');
 const { mayBeDiscordMessage, extractDiscordMessage, verifyDiscordScreen } = require('./lib/discord-workflow');
 const { transcribeRecording } = require('./lib/voice');
 const { runVisibleWorkflow } = require('./lib/visible-workflow');
 const { decideDesktopStep } = require('./lib/desktop-intelligence');
 const store = require('./lib/store');
+const { createAuthLimiter, clientAddress } = require('./lib/auth-limiter');
+const { analyzeRescueSnapshot } = require('./lib/rescue-insights');
 
 if (!/^sk_(test|live)_/.test(process.env.CLERK_SECRET_KEY || '') && !process.env.CLERK_JWT_KEY) {
   throw new Error('Configure CLERK_SECRET_KEY (sk_test_ or sk_live_) or CLERK_JWT_KEY');
@@ -28,6 +29,48 @@ const pendingStorageScans = new Map();
 const pendingDesktopActions = new Map();
 const activeDiscordWorkflows = new Map();
 const activeVisibleWorkflows = new Map();
+const authLimiter = createAuthLimiter(store);
+const activeRescueScans = new Set();
+const rescueRetryAfter = new Map();
+
+async function recordFailedAuth(ws, entries) {
+  try { await authLimiter.failure(entries); return true; }
+  catch (error) {
+    console.error('Could not record authentication attempt:', error);
+    ws.close(1011, 'Authentication is temporarily unavailable');
+    return false;
+  }
+}
+
+async function clearFailedAuth(ws, key) {
+  try { await authLimiter.success(key); return true; }
+  catch (error) {
+    console.error('Could not clear authentication attempts:', error);
+    ws.close(1011, 'Authentication is temporarily unavailable');
+    return false;
+  }
+}
+
+async function scheduleRescueScans() {
+  try {
+    const due = await store.listDueRescueDevices();
+    for (const { deviceId, ownerId } of due) {
+      const device = devices.get(deviceId);
+      if (!device || device.status !== 'online' || !device.supportsStorageScan ||
+          activeRescueScans.has(deviceId) || (rescueRetryAfter.get(deviceId) || 0) > Date.now() ||
+          [...pendingStorageScans.values()].some(item => item.deviceId === deviceId)) continue;
+      const requestId = crypto.randomUUID();
+      activeRescueScans.add(deviceId);
+      const timer = setTimeout(() => {
+        pendingStorageScans.delete(requestId);
+        activeRescueScans.delete(deviceId);
+        rescueRetryAfter.set(deviceId, Date.now() + 60 * 60 * 1000);
+      }, 20000);
+      pendingStorageScans.set(requestId, { client: null, deviceId, ownerId, scope: 'home', timer, autopilot: true });
+      device.ws.send(JSON.stringify({ type: 'SCAN_STORAGE', requestId, scope: 'home' }));
+    }
+  } catch (error) { console.error('Rescue Autopilot scheduling failed:', error); }
+}
 
 function requestDesktopAction(device, action, value) {
   return new Promise((resolve, reject) => {
@@ -133,6 +176,7 @@ store.init().then(() => server.listen(PORT, () => {
   if (process.env.NODE_ENV === 'production' && store.mode === 'file') {
     console.warn('File persistence is not durable on an ephemeral host. Configure DATABASE_URL for production.');
   }
+  setInterval(() => void scheduleRescueScans(), 60000).unref();
 })).catch(error => {
   console.error('Could not initialize persistence:', error);
   process.exit(1);
@@ -173,9 +217,10 @@ function trackCommand(userId, deviceId, deviceName, command) {
 // ---------- WebSocket Handling ----------
 wss.on("connection", async (ws, req) => {
   const url = new URL(req.url, "http://localhost");
+  const remoteAddress = clientAddress(req);
 
   const basicAuth = req.headers.authorization?.match(/^Basic (.+)$/i)?.[1];
-  const token = basicAuth ? Buffer.from(basicAuth, 'base64').toString('utf8') : url.searchParams.get("token");
+  const token = basicAuth ? Buffer.from(basicAuth, 'base64').toString('utf8') : null;
   const clientType = url.searchParams.get("type");
 
   // ===== DASHBOARD CONNECTION =====
@@ -239,9 +284,49 @@ wss.on("connection", async (ws, req) => {
         return;
       }
       if (data.type === 'DASHBOARD_HEARTBEAT') return;
+      if (data.type === 'CREATE_PAIRING') {
+        try {
+          const keys = ['pair-ip:' + remoteAddress, 'pair-user:' + ws.userId];
+          if (await authLimiter.blocked(keys)) {
+            ws.send(JSON.stringify({ type: 'PAIRING_ERROR', error: 'Too many pairing requests. Try again in five minutes.' }));
+            return;
+          }
+          await authLimiter.failure([[keys[0], 20], [keys[1], 5]]);
+          const code = crypto.randomBytes(18).toString('base64url');
+          await store.createPairing(crypto.createHash('sha256').update(code).digest('hex'), ws.userId, Date.now() + 10 * 60 * 1000);
+          ws.send(JSON.stringify({ type: 'PAIRING_CODE', code, expiresInSeconds: 600 }));
+        } catch (error) {
+          console.error('Could not create pairing code:', error);
+          ws.send(JSON.stringify({ type: 'PAIRING_ERROR', error: 'Pairing is temporarily unavailable.' }));
+        }
+        return;
+      }
       if (data.type !== 'AUTH_DEVICE' && data.type !== 'MULTI_DEVICE_EXECUTE' &&
           typeof data.deviceName !== 'string') {
         ws.send(JSON.stringify({ type: 'ERROR', message: 'Device name is required' }));
+        return;
+      }
+
+      if (['GET_RESCUE_AUTOPILOT', 'SET_RESCUE_AUTOPILOT', 'CLEAR_RESCUE_HISTORY'].includes(data.type)) {
+        const deviceId = `device-${data.deviceName.toLowerCase()}`;
+        try {
+          if (!ws.authenticatedDevices.has(deviceId)) throw new Error('Device access denied.');
+          if (data.type === 'SET_RESCUE_AUTOPILOT') {
+            if (typeof data.enabled !== 'boolean') throw new Error('Choose whether to enable daily scans.');
+            if (!await store.setRescueEnabled(deviceId, ws.userId, data.enabled)) throw new Error('Device access denied.');
+          }
+          if (data.type === 'CLEAR_RESCUE_HISTORY' &&
+              !await store.clearRescueSnapshots(deviceId, ws.userId)) throw new Error('Device access denied.');
+          const state = await store.getRescueState(deviceId, ws.userId);
+          if (!state) throw new Error('Device access denied.');
+          ws.send(JSON.stringify({ type: 'RESCUE_AUTOPILOT', deviceName: data.deviceName,
+            enabled: state.enabled, lastScanAt: state.lastScanAt,
+            insight: analyzeRescueSnapshot(state.latest, state.previous) }));
+          if (data.type === 'SET_RESCUE_AUTOPILOT' && state.enabled) void scheduleRescueScans();
+        } catch (error) {
+          ws.send(JSON.stringify({ type: 'RESCUE_AUTOPILOT', deviceName: data.deviceName,
+            error: error.message === 'Device access denied.' ? error.message : 'Rescue Autopilot is unavailable.' }));
+        }
         return;
       }
 
@@ -273,11 +358,22 @@ wss.on("connection", async (ws, req) => {
       // Dashboard authenticates to view a specific device
       if (data.type === "AUTH_DEVICE") {
         const { deviceName, password } = data;
-        if (typeof deviceName !== 'string' || typeof password !== 'string') {
+        if (typeof deviceName !== 'string' || !/^[a-z0-9_.-]{1,80}$/i.test(deviceName) ||
+            typeof password !== 'string' || !password || password.length > 200) {
           ws.send(JSON.stringify({ type: 'AUTH_ERROR', deviceName, error: 'Device name and password are required' }));
           return;
         }
         const deviceId = `device-${deviceName.toLowerCase()}`;
+        const attemptKeys = ['ip:' + remoteAddress, 'device:' + deviceId];
+        try {
+          if (await authLimiter.blocked(attemptKeys)) {
+            ws.send(JSON.stringify({ type: 'AUTH_ERROR', deviceName, error: 'Too many failed attempts. Try again in five minutes.' }));
+            return;
+          }
+        } catch (error) {
+          ws.send(JSON.stringify({ type: 'AUTH_ERROR', deviceName, error: 'Authentication is temporarily unavailable.' }));
+          return;
+        }
         let device;
         try { device = await store.getDevice(deviceId); }
         catch (error) {
@@ -287,6 +383,7 @@ wss.on("connection", async (ws, req) => {
         }
 
         if (!device) {
+          if (!await recordFailedAuth(ws, [[attemptKeys[0], 30], [attemptKeys[1], 5]])) return;
           ws.send(JSON.stringify({
             type: "AUTH_ERROR",
             deviceName,
@@ -296,6 +393,7 @@ wss.on("connection", async (ws, req) => {
         }
 
         if (!verifyPassword(password, device.passwordHash)) {
+          if (!await recordFailedAuth(ws, [[attemptKeys[0], 30], [attemptKeys[1], 5]])) return;
           ws.send(JSON.stringify({
             type: "AUTH_ERROR",
             deviceName,
@@ -315,6 +413,7 @@ wss.on("connection", async (ws, req) => {
           ws.send(JSON.stringify({ type: 'AUTH_ERROR', deviceName, error: 'This device belongs to another account' }));
           return;
         }
+        if (!await clearFailedAuth(ws, attemptKeys[1])) return;
 
         const liveDevice = devices.get(deviceId);
         if (liveDevice) liveDevice.ownerId = ws.userId;
@@ -913,7 +1012,7 @@ wss.on("connection", async (ws, req) => {
             ws.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: targetDevice.deviceName, error: 'Storage scan timed out. Update the device agent and try again.' }));
           }
         }, 20000);
-        pendingStorageScans.set(requestId, { client: ws, deviceId, timer });
+        pendingStorageScans.set(requestId, { client: ws, deviceId, ownerId: ws.userId, scope, timer });
         targetDevice.ws.send(JSON.stringify({ type: 'SCAN_STORAGE', requestId, scope,
           drive: scope === 'drive' ? data.drive.toUpperCase() : undefined }));
       }
@@ -1059,20 +1158,49 @@ wss.on("connection", async (ws, req) => {
   const deviceId = deviceToken;
   const deviceName = deviceToken.replace('device-', '').toUpperCase();
 
+  const attemptKeys = ['ip:' + remoteAddress, 'device:' + deviceId];
+  try {
+    if (await authLimiter.blocked(attemptKeys)) {
+      ws.close(1008, 'Too many failed attempts. Try again in five minutes.');
+      return;
+    }
+  } catch (error) {
+    ws.close(1011, 'Authentication is temporarily unavailable');
+    return;
+  }
+
   let storedDevice;
+  let newlyPaired = false;
   try {
     storedDevice = await store.getDevice(deviceId);
-    if (!storedDevice) storedDevice = await store.registerDevice(deviceId, deviceName, hashPassword(password));
+    if (!storedDevice) {
+      const pairingCode = req.headers['x-vortix-pairing'];
+      if (typeof pairingCode !== 'string' || !/^[A-Za-z0-9_-]{24}$/.test(pairingCode)) {
+        await authLimiter.failure([[attemptKeys[0], 30], [attemptKeys[1], 5]]);
+        ws.close(1008, 'Pairing required. Create a code in the dashboard and enter it in the tray or run vortix pair.');
+        return;
+      }
+      const codeHash = crypto.createHash('sha256').update(pairingCode).digest('hex');
+      storedDevice = await store.consumePairingAndRegister(codeHash, deviceId, deviceName, () => hashPassword(password));
+      if (!storedDevice) {
+        await authLimiter.failure([[attemptKeys[0], 30], [attemptKeys[1], 5]]);
+        ws.close(1008, 'Invalid or expired pairing code');
+        return;
+      }
+      newlyPaired = true;
+    }
   } catch (error) {
     console.error('Device registration failed:', error);
     ws.close(1011, 'Device registration failed');
     return;
   }
   if (!verifyPassword(password, storedDevice.passwordHash)) {
+    if (!await recordFailedAuth(ws, [[attemptKeys[0], 30], [attemptKeys[1], 5]])) return;
     console.log(`Invalid password for device: ${deviceName}`);
     ws.close(1008, 'Invalid device password');
     return;
   }
+  if (!await clearFailedAuth(ws, attemptKeys[1])) return;
 
   let device = devices.get(deviceId);
   if (!device) {
@@ -1088,9 +1216,17 @@ wss.on("connection", async (ws, req) => {
   device.supportsStorageScan = false;
   device.supportsDesktopIntelligence = false;
   device.lastSeen = Date.now();
+  ws.send(JSON.stringify({ type: 'DEVICE_AUTH_SUCCESS', deviceName, paired: Boolean(req.headers['x-vortix-pairing']) }));
 
   console.log(`Device connected: ${deviceName}`);
   broadcastDevices();
+  if (newlyPaired) {
+    dashboardClients.forEach(client => {
+      if (client.userId === storedDevice.ownerId && client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ type: 'DEVICE_PAIRED', deviceName }));
+      }
+    });
+  }
 
   ws.on("message", (message) => {
     let data;
@@ -1113,6 +1249,7 @@ wss.on("connection", async (ws, req) => {
         device.supportsDiscordDm = supportsDiscordDm;
         device.supportsDesktopIntelligence = supportsDesktopIntelligence;
         broadcastDevices();
+        if (supportsStorageScan) void scheduleRescueScans();
       }
       // Update platform info if provided
       if (data.platform) {
@@ -1183,18 +1320,41 @@ wss.on("connection", async (ws, req) => {
       if (pending && pending.deviceId === deviceId) {
         clearTimeout(pending.timer);
         pendingStorageScans.delete(data.requestId);
-        if (pending.client.readyState === WebSocket.OPEN && pending.client.authenticatedDevices.has(deviceId)) {
-          const files = Array.isArray(data.files) ? data.files.slice(0, 12).filter(file =>
+        const files = Array.isArray(data.files) ? data.files.slice(0, 12).filter(file =>
             typeof file?.name === 'string' && typeof file?.path === 'string' && Number.isFinite(file?.bytes))
             .map(file => ({ name: file.name.slice(0, 255), path: file.path.slice(0, 4096), bytes: file.bytes })) : [];
-          const folders = Array.isArray(data.folders) ? data.folders.slice(0, 8).filter(folder =>
+        const folders = Array.isArray(data.folders) ? data.folders.slice(0, 8).filter(folder =>
             typeof folder?.path === 'string' && Number.isFinite(folder?.bytes))
             .map(folder => ({ path: folder.path.slice(0, 4096), bytes: folder.bytes })) : [];
+        const error = typeof data.error === 'string' ? data.error.slice(0, 300) : undefined;
+        if (error && pending.autopilot) {
+          activeRescueScans.delete(deviceId);
+          rescueRetryAfter.set(deviceId, Date.now() + 60 * 60 * 1000);
+        }
+        if (pending.client?.readyState === WebSocket.OPEN && pending.client.authenticatedDevices.has(deviceId)) {
           pending.client.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: device.deviceName,
             files, folders, scannedFiles: data.scannedFiles || 0,
             scannedDirectories: data.scannedDirectories || 0, truncated: data.truncated === true,
             drives: Array.isArray(data.drives) ? data.drives.filter(drive => typeof drive === 'string' && /^[A-Z]:\\$|^\/$/i.test(drive)).slice(0, 26) : [],
-            error: typeof data.error === 'string' ? data.error.slice(0, 300) : undefined }));
+            error }));
+        }
+        if (!error && pending.ownerId) {
+          const summary = { scope: pending.scope, files, folders,
+            scannedFiles: Number(data.scannedFiles) || 0,
+            scannedDirectories: Number(data.scannedDirectories) || 0,
+            truncated: data.truncated === true };
+          store.getRescueState(deviceId, pending.ownerId).then(async state => {
+            if (!state?.enabled) return;
+            await store.saveRescueSnapshot(deviceId, pending.ownerId, summary);
+            const insight = analyzeRescueSnapshot(summary, state.latest);
+            dashboardClients.forEach(client => {
+              if (client.userId === pending.ownerId && client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({ type: 'RESCUE_INSIGHT', deviceName: device.deviceName,
+                  insight, lastScanAt: new Date().toISOString() }));
+              }
+            });
+          }).catch(error => console.error('Could not save Rescue snapshot:', error))
+            .finally(() => activeRescueScans.delete(deviceId));
         }
       }
     }
@@ -1303,7 +1463,8 @@ wss.on("connection", async (ws, req) => {
       if (pending.deviceId === deviceId) {
         clearTimeout(pending.timer);
         pendingStorageScans.delete(requestId);
-        if (pending.client.readyState === WebSocket.OPEN) {
+        activeRescueScans.delete(deviceId);
+        if (pending.client?.readyState === WebSocket.OPEN) {
           pending.client.send(JSON.stringify({ type: 'STORAGE_SCAN_RESULT', deviceName: device.deviceName, error: 'Device disconnected during the scan.' }));
         }
       }
@@ -1372,223 +1533,6 @@ if (process.env.NODE_ENV !== 'production' && !process.env.RAILWAY_ENVIRONMENT) {
 } else {
   console.log("Running in production mode - terminal interface disabled");
 }
-
-async function generatePlan(userInput, platform, userApiKey = null) {
-  // Platform-specific command patterns
-  const isWindows = platform === 'win32';
-  const isMac = platform === 'darwin';
-  const isLinux = platform === 'linux';
-  // Commands run on the agent, so use paths that expand on that device.
-  const homeDir = isWindows ? '%USERPROFILE%' : '$HOME';
-  const desktopPath = isWindows ? '%USERPROFILE%\\Desktop' : '$HOME/Desktop';
-
-  let platformInstructions = '';
-
-  if (isWindows) {
-    platformInstructions = `
-WINDOWS COMMAND PATTERNS:
-
-File Operations:
-- Create text file: echo Hello World > ${desktopPath}\\\\file.txt
-- Create HTML: echo ^<!DOCTYPE html^>^<html^>^<body^>Hello^</body^>^</html^> > ${desktopPath}\\\\page.html
-- Create directory: mkdir ${desktopPath}\\\\newfolder
-- Copy file: copy source.txt ${desktopPath}\\\\destination.txt
-- Delete file: del ${desktopPath}\\\\file.txt
-- List files: dir ${desktopPath}
-
-System Operations:
-- Open file: start ${desktopPath}\\\\file.txt
-- Open folder: explorer ${desktopPath}
-- System info: systeminfo
-- Network info: ipconfig
-- Process list: tasklist
-- Lock PC: rundll32.exe user32.dll,LockWorkStation
-- Shutdown: shutdown /s /t 0
-- Restart: shutdown /r /t 0
-
-Opening Applications (ALWAYS prefer installed apps over websites):
-- Open Notion app: start notion://
-- Open Spotify app: start spotify:
-- Open Discord app: start discord://
-- Open Slack app: start slack://
-- Open VS Code: code
-- Open Chrome: start chrome
-- Open Firefox: start firefox
-- Open Edge: start msedge
-- Open Notepad: start notepad
-- Open Calculator: start calc
-- Open Paint: start mspaint
-- Open File Explorer: start explorer
-- Generic app: start <appname>
-
-IMPORTANT: When user says "open [app name]", ALWAYS try to open the installed application first using "start <appname>" or "start <appname>://". Only open websites if explicitly asked for "website" or "browser".
-
-EXAMPLES:
-Request: "open notion"
-Response: {"steps": [{"command": "start notion://"}]}
-
-Request: "open notion website"
-Response: {"steps": [{"command": "start https://notion.so"}]}
-
-Request: "open spotify"
-Response: {"steps": [{"command": "start spotify:"}]}
-
-Request: "create hello.html on desktop"
-Response: {"steps": [{"command": "echo ^<!DOCTYPE html^>^<html^>^<head^>^<title^>Hello^</title^>^</head^>^<body^>^<h1^>Hello World^</h1^>^</body^>^</html^> > ${desktopPath}\\\\hello.html"}]}
-`;
-  } else if (isMac || isLinux) {
-    platformInstructions = `
-${isMac ? 'macOS' : 'LINUX'} COMMAND PATTERNS:
-
-File Operations:
-- Create text file: echo "Hello World" > ${desktopPath}/file.txt
-- Create HTML: echo '<!DOCTYPE html><html><body>Hello</body></html>' > ${desktopPath}/page.html
-- Create directory: mkdir -p ${desktopPath}/newfolder
-- Copy file: cp source.txt ${desktopPath}/destination.txt
-- Delete file: rm ${desktopPath}/file.txt
-- List files: ls -la ${desktopPath}
-
-System Operations:
-- Open file: ${isMac ? 'open' : 'xdg-open'} ${desktopPath}/file.txt
-- Open folder: ${isMac ? 'open' : 'xdg-open'} ${desktopPath}
-- System info: ${isMac ? 'system_profiler SPSoftwareDataType' : 'uname -a'}
-- Network info: ifconfig
-- Process list: ps aux
-${isMac ? '- Lock screen: pmset displaysleepnow' : '- Lock screen: gnome-screensaver-command -l'}
-${isMac ? '- Shutdown: sudo shutdown -h now' : '- Shutdown: sudo shutdown -h now'}
-${isMac ? '- Restart: sudo shutdown -r now' : '- Restart: sudo reboot'}
-
-Opening Applications (ALWAYS prefer installed apps over websites):
-${isMac ? `- Open Notion app: open -a Notion
-- Open Spotify app: open -a Spotify
-- Open Discord app: open -a Discord
-- Open Slack app: open -a Slack
-- Open VS Code: open -a "Visual Studio Code"
-- Open Chrome: open -a "Google Chrome"
-- Open Safari: open -a Safari
-- Open Firefox: open -a Firefox
-- Generic app: open -a "<AppName>"` : `- Text Editor: gedit (or nano, vim, kate)
-- Open Notion: notion-app (if installed)
-- Open Spotify: spotify (if installed)
-- Open VS Code: code
-- Open Chrome: google-chrome
-- Open Firefox: firefox
-- File Manager: nautilus or dolphin or thunar
-- Terminal: gnome-terminal or konsole or xterm
-- Calculator: gnome-calculator or kcalc
-- Generic app: <appname> (just the command name, no paths)
-
-IMPORTANT FOR LINUX: 
-- Notepad does NOT exist on Linux. Use: gedit, nano, vim, or kate instead
-- Paint does NOT exist on Linux. Use: gimp, krita, or kolourpaint instead
-- Calculator: use gnome-calculator or kcalc
-- DO NOT use xdg-open with app names, just run the app command directly`}
-
-IMPORTANT: When user says "open [app name]", ALWAYS try to open the installed application first. Only open websites if explicitly asked for "website" or "browser".
-
-EXAMPLES:
-Request: "open notion"
-Response: {"steps": [{"command": "${isMac ? 'open -a Notion' : 'notion-app'}"}]}
-
-Request: "open notepad" (Linux)
-Response: {"steps": [{"command": "gedit"}]}
-
-Request: "start text editor" (Linux)
-Response: {"steps": [{"command": "gedit"}]}
-
-Request: "open notion website"
-Response: {"steps": [{"command": "${isMac ? 'open' : 'xdg-open'} https://notion.so"}]}
-
-Request: "create hello.html on desktop"
-Response: {"steps": [{"command": "echo '<!DOCTYPE html><html><head><title>Hello</title></head><body><h1>Hello World</h1></body></html>' > ${desktopPath}/hello.html"}]}
-`;
-  }
-
-  const prompt = `
-You are an expert ${isWindows ? 'Windows' : isMac ? 'macOS' : 'Linux'} command-line assistant. Generate precise, executable ${isWindows ? 'Windows' : isMac ? 'macOS' : 'Linux'} commands for the user's request.
-
-PLATFORM: ${isWindows ? 'WINDOWS' : isMac ? 'macOS' : 'LINUX'} - You MUST use ${isWindows ? 'Windows' : isMac ? 'macOS' : 'Linux'} commands ONLY!
-
-System Information:
-- Home Directory: ${homeDir}
-- Desktop Path: ${desktopPath}
-- Platform: ${platform} (${isWindows ? 'Windows' : isMac ? 'macOS' : 'Linux'})
-
-CRITICAL RULES:
-1. Return ONLY valid JSON: {"steps": [{"command": "exact_command_here"}]}
-2. Use ABSOLUTE paths appropriate for ${isWindows ? 'Windows (backslashes)' : 'Unix (forward slashes)'}
-3. For file creation: use appropriate echo syntax for the platform
-4. Break complex tasks into simple, sequential steps
-5. Test each command mentally before including it
-6. IMPORTANT: When user says "open [app name]", ALWAYS open the INSTALLED APPLICATION, NOT the website
-7. Only open websites if user explicitly says "website", "browser", or provides a URL
-8. ${isWindows ? 'USE WINDOWS COMMANDS ONLY! Use "start" command for opening apps!' : isMac ? 'USE macOS COMMANDS ONLY! Use "open -a" for apps!' : 'USE LINUX COMMANDS ONLY!'}
-
-APPLICATION OPENING ${isWindows ? '(WINDOWS)' : isMac ? '(macOS)' : '(LINUX)'}:
-${isWindows ? `- "open notion" → start notion://
-- "open spotify" → start spotify:
-- "open vscode" → code
-- "open chrome" → start chrome
-- ANY APP → start <appname> or start <appname>://` : isMac ? `- "open notion" → open -a Notion
-- "open spotify" → open -a Spotify
-- "open vscode" → open -a "Visual Studio Code"
-- ANY APP → open -a "<AppName>"` : `- "open notion" → notion-app (if installed)
-- "open spotify" → spotify
-- "open vscode" → code
-- ANY APP → <appname> or xdg-open <appname>`}
-
-${platformInstructions}
-
-User Request: ${userInput}
-
-Return ONLY JSON with executable commands:
-`;
-
-  // The backend's Groq key takes precedence over an optional browser key.
-  const groqKey = selectGroqKey(process.env.GROQ_API_KEY, userApiKey);
-
-  if (groqKey) {
-    return generateGroqPlan(prompt, groqKey);
-  } else {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('GROQ_API_KEY is missing on the backend. Set it on Render and redeploy.');
-    }
-    // Fallback to Ollama (local only)
-    console.log("Using Ollama for AI planning (local only)");
-    const ollamaUrl = process.env.OLLAMA_URL || "http://localhost:11434";
-
-    try {
-      const response = await axios.post(
-        `${ollamaUrl.replace(/\/$/, '')}/api/generate`,
-        {
-          model: "qwen2.5:7b",
-          prompt: prompt,
-          stream: false
-        },
-        {
-          timeout: 10000
-        }
-      );
-
-      const text = response.data.response.trim();
-      console.log("Ollama output:", text);
-
-      // Extract JSON safely
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-
-      if (!jsonMatch) {
-        throw new Error("No valid JSON found in LLM output");
-      }
-
-      return JSON.parse(jsonMatch[0]);
-    } catch (error) {
-      console.error("Ollama connection error:", error.message);
-      throw new Error("AI planning is not available. Ollama is not running or not accessible. Please use direct commands instead.");
-    }
-  }
-}
-
-
 
 // Helper to broadcast device list to a specific dashboard
 async function broadcastDevicesToDashboard(dashboardWs) {
