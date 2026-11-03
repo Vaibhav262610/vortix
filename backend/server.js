@@ -524,7 +524,8 @@ wss.on("connection", async (ws, req) => {
                   const values = { launch: decision.app,
                     type: { text: decision.text, submit: decision.submit }, key: decision.key,
                     click: { x: decision.x, y: decision.y },
-                    scroll: { x: decision.x, y: decision.y, direction: decision.direction } };
+                    scroll: { x: decision.x, y: decision.y, direction: decision.direction },
+                    control: decision.control };
                   return { type: 'act', action: decision.action, value: values[decision.action], frame };
                 },
               });

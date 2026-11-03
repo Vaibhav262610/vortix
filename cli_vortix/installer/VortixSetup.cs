@@ -15,7 +15,7 @@ namespace VortixSetup
 {
     internal static class Program
     {
-        private const string Version = "1.2.13";
+        private const string Version = "1.2.14";
 
         [STAThread]
         private static void Main()

@@ -8,7 +8,7 @@ Vortix lets you inspect and control your own computer from a browser. A Windows 
 
 ## Try it on Windows
 
-1. Install [Node.js](https://nodejs.org/en/download) and download [Vortix 1.2.13 for Windows](https://vortixai.vercel.app/downloads/VortixSetup-1.2.13.exe). Verify the [SHA256 checksum](https://vortixai.vercel.app/downloads/VortixSetup-1.2.13.exe.sha256) if desired.
+1. Install [Node.js](https://nodejs.org/en/download) and download [Vortix 1.2.14 for Windows](https://vortixai.vercel.app/downloads/VortixSetup-1.2.14.exe). Verify the [SHA256 checksum](https://vortixai.vercel.app/downloads/VortixSetup-1.2.14.exe.sha256) if desired.
 2. Sign in at [vortixai.vercel.app](https://vortixai.vercel.app). In the dashboard, choose **Add device → Create code**.
 3. In the tray app, set a device password and choose **Enter pairing code**. Paste the code within ten minutes. The device appears in your dashboard after it connects.
 
@@ -19,6 +19,7 @@ The Windows download and `cli_vortix` package are built from the same `agent/` s
 ## What it does
 
 - **Voice and text control:** speak or type a request. Windows interactive tasks use a bounded screenshot → action → verification loop after you approve the goal. Direct shell commands are also available.
+- **Named Windows controls:** the current agent can inspect and invoke visible Notepad and Calculator controls through Windows UI Automation, then capture a fresh screenshot. Other apps still use the visual workflow.
 - **Storage Rescue:** scan accessible drives for large files and folders without deleting them. Opt into daily read-only Rescue Autopilot scans of your user folders to compare growth over time. Scans are bounded and may be partial.
 - **Screen sharing and file transfer:** view a connected desktop and move files through the dashboard.
 - **Discord messaging:** preview the exact recipient and text, then let the workflow verify the visible conversation and draft before sending.

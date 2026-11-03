@@ -1,6 +1,6 @@
 {
   "name": "vortix",
-  "version": "1.2.13",
+  "version": "1.2.14",
   "description": "AI-powered remote OS control system with natural language commands, real-time monitoring, and modern web dashboard",
   "bin": {
     "vortix": "bin/vortix.js"

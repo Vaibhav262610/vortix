@@ -6,7 +6,7 @@ This list separates shipped controls from work that still needs implementation a
 
 1. Expand the [security benchmark](benchmarks/RESULTS.md) to storage scans and screen workflows. Publish repeated measurements, scenarios, machine details, and before/after results; do not claim results from live apps until measured.
 2. Improve the read-only Rescue Autopilot with configurable schedules, retention controls, and stronger whole-drive trend coverage.
-3. Add native Windows UI Automation for two selected apps, then compare task completion and time against screenshot-only control.
+3. Expand native Windows UI Automation beyond Notepad and Calculator. The first two app controls have a reproducible smoke benchmark; compare repeated task completion and time against screenshot-only control on the same apps and machine.
 4. Persist workflow checkpoints so restarts can resume safely without repeating a send or destructive action.
 5. Add preview, local confirmation, Recycle Bin move, and undo before any cleanup action.
 6. Split dashboard and backend files by UI component and message domain; add browser component and message-router coverage as each boundary is extracted.

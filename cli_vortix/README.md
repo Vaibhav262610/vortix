@@ -4,7 +4,7 @@ This package runs the Vortix agent on a computer you own or administer. The main
 
 ## Windows setup
 
-Install Node.js, then download the matching [Vortix 1.2.13 installer](https://vortixai.vercel.app/downloads/VortixSetup-1.2.13.exe). Sign in to the [dashboard](https://vortixai.vercel.app/dashboard), choose **Add device → Create code**, set a password in the tray app, and enter the code there. The tray shows whether the agent is connected and can pause or quit it.
+Install Node.js, then download the matching [Vortix 1.2.14 installer](https://vortixai.vercel.app/downloads/VortixSetup-1.2.14.exe). Sign in to the [dashboard](https://vortixai.vercel.app/dashboard), choose **Add device → Create code**, set a password in the tray app, and enter the code there. The tray shows whether the agent is connected and can pause or quit it.
 
 The npm registry may still serve an older version. To install this source version, clone the repository and run:
 
@@ -13,7 +13,7 @@ cd cli_vortix
 npm ci
 npm run build:tray
 npm pack
-npm install -g ./vortix-1.2.13.tgz
+npm install -g ./vortix-1.2.14.tgz
 vortix enable-autostart
 vortix tray
 ```

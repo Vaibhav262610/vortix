@@ -54,6 +54,62 @@ public static class VortixDesktop {
   public static void Wheel(int direction) { mouse_event(0x0800, 0, 0, unchecked((uint)(direction * 120)), UIntPtr.Zero); }
 }`;
 
+const WINDOWS_UIA_SOURCE = `
+function Get-VortixControls($window, $processName, $title) {
+  if ($processName -ne 'Notepad' -and $processName -ne 'CalculatorApp' -and
+      -not ($processName -eq 'ApplicationFrameHost' -and $title -eq 'Calculator')) { return @() }
+  try {
+    Add-Type -AssemblyName UIAutomationClient
+    Add-Type -AssemblyName UIAutomationTypes
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle($window)
+    $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::IsControlElementProperty, $true)
+    $nodes = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
+    $controls = @()
+    foreach ($node in $nodes) {
+      try {
+        $current = $node.Current
+        $name = [string]$current.Name
+        $kind = [string]$current.ControlType.ProgrammaticName
+        $id = [string]$current.AutomationId
+        $bounds = $current.BoundingRectangle
+        $invokePattern = $null
+        if ($current.IsEnabled -and -not $current.IsOffscreen -and $name.Length -gt 0 -and
+            $name.Length -le 100 -and $id.Length -le 100 -and $name -notmatch '[\\x00-\\x1f]' -and
+            $id -notmatch '[\\x00-\\x1f]' -and $bounds.Width -gt 0 -and $bounds.Height -gt 0 -and
+            $kind -in @('ControlType.Button', 'ControlType.MenuItem', 'ControlType.TabItem', 'ControlType.Hyperlink') -and
+            $node.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invokePattern)) {
+          $controls += @{ name = $name; id = $id; kind = $kind }
+          if ($controls.Count -ge 32) { break }
+        }
+      } catch { }
+    }
+    return $controls
+  } catch { return @() }
+}
+function Invoke-VortixControl($window, $name, $id, $kind) {
+  Add-Type -AssemblyName UIAutomationClient
+  Add-Type -AssemblyName UIAutomationTypes
+  $root = [System.Windows.Automation.AutomationElement]::FromHandle($window)
+  $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::IsControlElementProperty, $true)
+  $nodes = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
+  $matches = @()
+  foreach ($node in $nodes) {
+    try {
+      $current = $node.Current
+      if ($current.Name -ceq $name -and $current.AutomationId -ceq $id -and
+          $current.ControlType.ProgrammaticName -ceq $kind -and $current.IsEnabled -and -not $current.IsOffscreen) {
+        $matches += $node
+      }
+    } catch { }
+  }
+  if ($matches.Count -ne 1) { throw 'The named control is no longer uniquely visible.' }
+  $pattern = $null
+  if (-not $matches[0].TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
+    throw 'The named control no longer supports a native action.'
+  }
+  ([System.Windows.Automation.InvokePattern]$pattern).Invoke()
+}`;
+
 function runPowerShell(script) {
   return new Promise((resolve, reject) => {
     const encoded = Buffer.from(script, 'utf16le').toString('base64');
@@ -66,10 +122,10 @@ function runPowerShell(script) {
 }
 
 function desktopErrorMessage(stderr, error) {
-  if (error.killed) return 'Discord took too long to open. Open it manually and try again.';
+  if (error.killed) return 'Desktop action timed out. Check that the app is visible and try again.';
   const marker = /VORTIX_DESKTOP_ERROR:([^<\r\n]+)/.exec(stderr || '');
   if (marker) return marker[1].replace(/_x[0-9a-f]{4}_/gi, ' ').replace(/&amp;/g, '&').slice(0, 300).trim();
-  return 'Desktop automation failed. Open Discord on this computer and try again.';
+  return 'Desktop automation failed. Check that the app is visible and try again.';
 }
 
 async function discordAction(action, value) {
@@ -153,7 +209,7 @@ let activeDesktopPid = null;
 
 async function desktopAction(action, value) {
   if (process.platform !== 'win32') throw new Error('Screen-aware control currently requires Windows.');
-  if (!['reset', 'observe', 'launch', 'type', 'key', 'click', 'scroll'].includes(action)) throw new Error('Invalid desktop action.');
+  if (!['reset', 'observe', 'launch', 'type', 'key', 'click', 'scroll', 'control'].includes(action)) throw new Error('Invalid desktop action.');
   if (action === 'reset') activeDesktopPid = null;
   if (action === 'launch' && (typeof value !== 'string' || !/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(value))) {
     throw new Error('Enter a program name without arguments to open an app.');
@@ -173,15 +229,24 @@ async function desktopAction(action, value) {
   if (action === 'scroll' && (!Number.isInteger(value.direction) || ![-1, 1].includes(value.direction))) {
     throw new Error('Invalid scroll direction.');
   }
+  if (action === 'control' && (!value || !['ControlType.Button', 'ControlType.MenuItem',
+    'ControlType.TabItem', 'ControlType.Hyperlink'].includes(value.kind) ||
+    !['name', 'id'].every(field => typeof value[field] === 'string' && value[field].length <= 100 &&
+      !/[\r\n\x00-\x1f]/.test(value[field])) || !value.name)) {
+    throw new Error('Invalid named desktop control.');
+  }
   const targetPid = activeDesktopPid || 0;
   const safeText = action === 'type' ? value.text.replace(/'/g, "''") : '';
+  const safeControl = action === 'control' ? ['name', 'id', 'kind'].map(field => value[field].replace(/'/g, "''")) : [];
+  const launchName = action === 'launch' ? value.replace(/\.exe$/i, '') : '';
   const actionCode = {
     reset: '', observe: '',
-    launch: `$started = Start-Process -FilePath '${action === 'launch' ? value : ''}' -PassThru -ErrorAction Stop\nStart-Sleep -Milliseconds 1200\n$targetProcessId = $started.Id`,
+    launch: `$started = Start-Process -FilePath '${action === 'launch' ? value : ''}' -PassThru -ErrorAction Stop\n$targetProcessId = $started.Id\n$launchName = '${launchName}'\n$launchIsCalculator = $launchName -in @('calc', 'calculator')\n$launchCandidates = if ($launchIsCalculator) { @('CalculatorApp', 'ApplicationFrameHost') } else { @($launchName) }`,
     type: `[VortixDesktop]::Text('${safeText}')\n${action === 'type' && value.submit ? 'Start-Sleep -Milliseconds 450\n[VortixDesktop]::Key(0x0D)' : ''}`,
     key: action === 'key' ? `[VortixDesktop]::${keys[value]}` : '',
     click: action === 'click' ? `[VortixDesktop]::Click($window, ${value?.x}, ${value?.y})` : '',
     scroll: action === 'scroll' ? `[VortixDesktop]::Move($window, ${value?.x}, ${value?.y})\n[VortixDesktop]::Wheel(${value?.direction})` : '',
+    control: action === 'control' ? `$controlPid = [uint32]0\n[void][VortixDesktop]::GetWindowThreadProcessId($window, [ref]$controlPid)\n$controlProcess = Get-Process -Id $controlPid -ErrorAction SilentlyContinue\nif (-not $controlProcess -or ($controlProcess.ProcessName -notin @('Notepad', 'CalculatorApp') -and -not ($controlProcess.ProcessName -eq 'ApplicationFrameHost' -and $controlProcess.MainWindowTitle -eq 'Calculator'))) { throw 'Named controls are available only for Notepad and Calculator.' }\nInvoke-VortixControl $window '${safeControl[0]}' '${safeControl[1]}' '${safeControl[2]}'` : '',
   }[action];
   const script = `$ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'Stop'
@@ -189,6 +254,7 @@ try {
 Add-Type -TypeDefinition @'
 ${WINDOWS_API_SOURCE}
 '@
+${WINDOWS_UIA_SOURCE}
 $targetProcessId = ${targetPid}
 ${action === 'launch' ? actionCode : ''}
 $window = [IntPtr]::Zero
@@ -197,20 +263,29 @@ for ($attempt = 0; $attempt -lt 12; $attempt++) {
     $targetProcess = Get-Process -Id $targetProcessId -ErrorAction SilentlyContinue
     if ($targetProcess -and $targetProcess.MainWindowHandle -ne 0) { $window = $targetProcess.MainWindowHandle }
   }
-  if ($window -eq [IntPtr]::Zero -and ($targetProcessId -eq 0 -or ${action === 'launch' ? '$attempt -ge 4' : '$false'})) {
+  ${action === 'launch' ? `if ($window -eq [IntPtr]::Zero) {
+    $candidate = $launchCandidates | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } |
+      Where-Object { $_.MainWindowHandle -ne 0 -and (-not $launchIsCalculator -or
+        $_.ProcessName -ne 'ApplicationFrameHost' -or $_.MainWindowTitle -eq 'Calculator') } |
+      Sort-Object StartTime -Descending | Select-Object -First 1
+    if ($candidate) { $window = $candidate.MainWindowHandle; $targetProcessId = $candidate.Id }
+  }` : ''}
+  if ($window -eq [IntPtr]::Zero -and $targetProcessId -eq 0) {
     $window = [VortixDesktop]::GetForegroundWindow()
   }
   if ($window -ne [IntPtr]::Zero) { break }
   Start-Sleep -Milliseconds 250
 }
-if ($window -eq [IntPtr]::Zero) { throw 'No visible desktop window was found.' }
-[void][VortixDesktop]::SetForegroundWindow($window)
+if ($window -eq [IntPtr]::Zero) { throw '${action === 'launch' ? 'The requested app did not open a visible window.' : 'No visible desktop window was found.'}' }
+${action === 'control' ? '' : `[void][VortixDesktop]::SetForegroundWindow($window)
 if ([VortixDesktop]::GetForegroundWindow() -ne $window) {
   [VortixDesktop]::Key(0x12)
   [void][VortixDesktop]::SetForegroundWindow($window)
 }
 Start-Sleep -Milliseconds 200
-if ([VortixDesktop]::GetForegroundWindow() -ne $window) { throw 'The target window could not be focused.' }
+if ([VortixDesktop]::GetForegroundWindow() -ne $window -and -not (${action === 'launch' ? "$launchName -in @('notepad', 'calc', 'calculator')" : '$false'})) {
+  throw 'The target window could not be focused.'
+}`}
 ${action === 'launch' ? '' : actionCode}
 Start-Sleep -Milliseconds ${action === 'type' && value.submit ? 1500 : 650}
 $processIdValue = [uint32]0
@@ -218,6 +293,7 @@ $processIdValue = [uint32]0
 $windowProcess = Get-Process -Id $processIdValue -ErrorAction SilentlyContinue
 $title = if ($windowProcess) { $windowProcess.MainWindowTitle } else { '' }
 $processName = if ($windowProcess) { $windowProcess.ProcessName } else { '' }
+$controls = @(Get-VortixControls $window $processName $title)
 Add-Type -AssemblyName System.Drawing
 $rect = New-Object VortixDesktop+Rect
 if (-not [VortixDesktop]::GetWindowRect($window, [ref]$rect)) { throw 'Could not inspect the active window.' }
@@ -235,7 +311,7 @@ try {
   try {
     $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Jpeg)
     [Console]::Out.WriteLine('VORTIX_FRAME:' + [Convert]::ToBase64String($stream.ToArray()))
-    [Console]::Out.WriteLine('VORTIX_META:' + (@{ pid = $processIdValue; title = $title; process = $processName } | ConvertTo-Json -Compress))
+    [Console]::Out.WriteLine('VORTIX_META:' + (@{ pid = $processIdValue; title = $title; process = $processName; controls = $controls } | ConvertTo-Json -Compress -Depth 4))
   } finally { $stream.Dispose() }
 } finally { $graphics.Dispose(); $bitmap.Dispose() }
 } catch {
@@ -250,8 +326,11 @@ try {
   if (typeof parsed.pid !== 'number' || typeof parsed.title !== 'string' || typeof parsed.process !== 'string') {
     throw new Error('The active window information is invalid.');
   }
+  const controls = Array.isArray(parsed.controls) ? parsed.controls.filter(control =>
+    control && typeof control.name === 'string' && typeof control.id === 'string' &&
+    typeof control.kind === 'string').slice(0, 32) : [];
   activeDesktopPid = parsed.pid;
-  return { frame, pid: parsed.pid, title: parsed.title.slice(0, 160), process: parsed.process.slice(0, 80) };
+  return { frame, pid: parsed.pid, title: parsed.title.slice(0, 160), process: parsed.process.slice(0, 80), controls };
 }
 
 module.exports = { discordAction, desktopAction, desktopErrorMessage };
