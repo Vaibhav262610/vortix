@@ -28,6 +28,16 @@ test('PostgreSQL atomically consumes pairing and persists limits and Rescue sett
       assert.equal((await store.getRescueState(deviceId, 'test-owner')).enabled, true);
       await store.saveRescueSnapshot(deviceId, 'test-owner', { scope: 'home', folders: [], files: [], truncated: false });
       assert.equal((await store.getRescueState(deviceId, 'test-owner')).latest.scope, 'home');
+      for (let i = 0; i < 21; i++) {
+        await store.saveRescueSnapshot(deviceId, 'test-owner', { scope: 'home', sample: i });
+      }
+      assert.equal((await store.getRescueState(deviceId, 'test-owner')).latest.sample, 20);
+      const { Pool } = require('pg');
+      const verifyPool = new Pool({ connectionString: url.toString() });
+      try {
+        const retained = await verifyPool.query('SELECT COUNT(*) AS count FROM vortix_rescue_snapshots WHERE device_id=$1', [deviceId]);
+        assert.equal(Number(retained.rows[0].count), 20);
+      } finally { await verifyPool.end(); }
       await store.clearRescueSnapshots(deviceId, 'test-owner');
       assert.equal((await store.getRescueState(deviceId, 'test-owner')).latest, null);
     } finally {

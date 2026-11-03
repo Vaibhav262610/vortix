@@ -10,7 +10,7 @@ Vortix runs commands on a device where its agent is installed. Install it only o
 - Existing device passwords are hashed with scrypt on the backend. Failed attempts are counted per device and network address, with a five-minute lockout. Counters persist in PostgreSQL when `DATABASE_URL` is set.
 - The agent sends credentials in WebSocket headers. Hosted connections must use TLS (`wss://`); local development may use `ws://localhost`.
 - The local tray can pause or quit the agent. Approved AI goals are bounded by step count, and Discord message workflows check the visible recipient and draft.
-- Rescue Autopilot is off by default. When enabled, it stores read-only scan summaries that include folder paths, file paths, and sizes. The dashboard owner can clear those summaries. File mode keeps up to 20 per device; PostgreSQL keeps them until cleared.
+- Rescue Autopilot is off by default. When enabled, it stores read-only scan summaries that include folder paths, file paths, and sizes. The dashboard owner can clear those summaries. File and PostgreSQL modes keep the newest 20 snapshots per device.
 
 ## Trust boundary
 

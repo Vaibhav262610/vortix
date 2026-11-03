@@ -17,8 +17,8 @@ Render supplies `PORT`. Do not place these secrets in `NEXT_PUBLIC_` dashboard v
 
 Create a PostgreSQL database and use its [internal URL](https://render.com/docs/postgresql-creating-connecting) for `DATABASE_URL` when the database and web service are in the same Render region. Render's [default web service filesystem is ephemeral](https://render.com/docs/disks), so the backend's file mode will lose ownership and history after a restart or redeploy. The backend creates its tables on startup.
 
-After deploying, open `https://YOUR-BACKEND-HOST/health` and confirm `"status":"ok"` and `"persistence":"postgres"`. Then connect an agent, sign in to the dashboard, and use **Add device** with the agent's computer name and device password. Returning to the dashboard with the same Clerk account restores access without asking for the device password again.
+After deploying, open `https://YOUR-BACKEND-HOST/health` and confirm `"status":"ok"` and `"persistence":"postgres"`. Sign in to the dashboard, open **Add device**, and create a pairing code. Enter that code in the Windows tray app or run `vortix pair` on the device. The code expires after ten minutes and binds the new device to your account. Returning to the dashboard with the same Clerk account restores access without entering the device password again.
 
 Agent connections should use `wss://`. Current agents send the device credential in the WebSocket authorization header. Older agents using a URL token still connect for compatibility; update them when practical.
 
-Do not use a device name already registered by another user. Device IDs are currently unique across the service.
+New installations get a random suffix in their device name, avoiding predictable global names. Existing owned devices reconnect with their saved password. Use a new pairing code for an older unclaimed installation to move it to a random identity.

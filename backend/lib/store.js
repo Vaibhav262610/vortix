@@ -216,6 +216,10 @@ async function saveRescueSnapshot(deviceId, ownerId, summary) {
   if (pool) {
     await pool.query('INSERT INTO vortix_rescue_snapshots (device_id,owner_id,summary) VALUES ($1,$2,$3)',
       [deviceId, ownerId, JSON.stringify(summary)]);
+    await pool.query(`DELETE FROM vortix_rescue_snapshots WHERE device_id=$1 AND owner_id=$2 AND id NOT IN (
+      SELECT id FROM vortix_rescue_snapshots WHERE device_id=$1 AND owner_id=$2
+      ORDER BY captured_at DESC,id DESC LIMIT 20
+    )`, [deviceId, ownerId]);
     await pool.query('UPDATE vortix_rescue_settings SET last_scan_at=NOW() WHERE device_id=$1 AND owner_id=$2', [deviceId, ownerId]);
   } else {
     const snapshots = state.rescueSnapshots[deviceId] || [];
