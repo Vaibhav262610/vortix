@@ -8,8 +8,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        project: [backend, agent, dashboard]
+        project: [backend, dashboard]
     defaults:
       run:
         working-directory: ${{ matrix.project }}
@@ -43,6 +44,10 @@ jobs:
           cache-dependency-path: cli_vortix/package-lock.json
       - run: npm ci
         working-directory: cli_vortix
+      - run: npm ci
+        working-directory: agent
+      - run: npm test
+        working-directory: agent
       - run: npm audit --omit=dev --audit-level=high
         working-directory: cli_vortix
       - run: npm run build:tray

@@ -8,7 +8,7 @@ $source = Join-Path $packageRoot 'installer\VortixSetup.cs'
 if (-not ((Get-Content -Raw $source).Contains('private const string Version = "' + $version + '"'))) { throw 'Installer version does not match package.json.' }
 $archive = Join-Path $packageRoot ('vortix-' + $version + '.tgz')
 Push-Location $packageRoot
-try { & npm.cmd pack --silent | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'npm pack failed.' } }
+try { & npm.cmd pack; if ($LASTEXITCODE -ne 0) { throw 'npm pack failed.' } }
 finally { Pop-Location }
 $icon = Join-Path $packageRoot 'tray\VortixTray.ico'
 $outputFolder = Join-Path $repoRoot 'dashboard\public\downloads'
