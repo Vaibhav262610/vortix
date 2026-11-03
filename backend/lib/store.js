@@ -82,17 +82,27 @@ async function init() {
 
 async function createWorkflow({ id, ownerId, deviceId, kind, payload, expiresAt }) {
   if (pool) {
-    await pool.query('DELETE FROM vortix_workflows WHERE expires_at < NOW()');
+    await pruneExpiredWorkflows();
     await pool.query('INSERT INTO vortix_workflows (id,owner_id,device_id,kind,status,payload,expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
       [id, ownerId, deviceId, kind, 'preview', JSON.stringify(payload), new Date(expiresAt)]);
   } else {
-    for (const [key, workflow] of Object.entries(state.workflows)) {
-      if (workflow.expiresAt < Date.now()) delete state.workflows[key];
-    }
+    await pruneExpiredWorkflows();
     state.workflows[id] = { id, ownerId, deviceId, kind, status: 'preview', payload, expiresAt,
       updatedAt: Date.now() };
     persist();
   }
+}
+
+async function pruneExpiredWorkflows() {
+  if (pool) {
+    await pool.query('DELETE FROM vortix_workflows WHERE expires_at < NOW()');
+    return;
+  }
+  let changed = false;
+  for (const [id, workflow] of Object.entries(state.workflows)) {
+    if (workflow.expiresAt < Date.now()) { delete state.workflows[id]; changed = true; }
+  }
+  if (changed) persist();
 }
 
 async function getWorkflow(id, ownerId) {
@@ -405,5 +415,5 @@ async function getStats(userId) {
 module.exports = { init, getDevice, registerDevice, claimDevice, updatePlatform, listDevices,
   createPairing, consumePairingAndRegister, authAttemptStatus, recordAuthFailure, clearAuthAttempt,
   getRescueState, setRescueEnabled, listDueRescueDevices, saveRescueSnapshot, clearRescueSnapshots,
-  createWorkflow, getWorkflow, updateWorkflow, latestRecoverableWorkflow,
+  createWorkflow, getWorkflow, updateWorkflow, latestRecoverableWorkflow, pruneExpiredWorkflows,
   saveCommand, getHistory, getStats, close, mode: pool ? 'postgres' : 'file' };

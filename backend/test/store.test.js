@@ -45,6 +45,10 @@ test('file store keeps ownership and user-scoped history after reload', async ()
     assert.equal((await store.getWorkflow('sending-flow', 'owner-a')).status, 'delivery_uncertain');
     assert.equal(await store.getWorkflow('sending-flow', 'owner-b'), null);
     assert.equal((await store.latestRecoverableWorkflow('owner-a')).id, 'sending-flow');
+    await store.createWorkflow({ id: 'expired-flow', ownerId: 'owner-a', deviceId: 'device-lab-pc',
+      kind: 'discord', payload: workflowPayload, expiresAt: Date.now() - 1 });
+    await store.pruneExpiredWorkflows();
+    assert.equal(await store.getWorkflow('expired-flow', 'owner-a'), null);
     assert.equal((await store.getDevice('device-lab-pc')).ownerId, 'owner-a');
     assert.equal((await store.getRescueState('device-lab-pc', 'owner-a')).enabled, true);
     assert.equal(await store.getRescueState('device-lab-pc', 'owner-b'), null);

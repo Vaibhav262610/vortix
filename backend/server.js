@@ -177,6 +177,8 @@ store.init().then(() => server.listen(PORT, () => {
     console.warn('File persistence is not durable on an ephemeral host. Configure DATABASE_URL for production.');
   }
   setInterval(() => void scheduleRescueScans(), 60000).unref();
+  setInterval(() => store.pruneExpiredWorkflows().catch(error =>
+    console.error('Could not prune expired workflows:', error)), 60 * 60 * 1000).unref();
 })).catch(error => {
   console.error('Could not initialize persistence:', error);
   process.exit(1);
@@ -1411,9 +1413,17 @@ wss.on("connection", async (ws, req) => {
         pendingDesktopActions.delete(data.requestId);
         if (typeof data.error === 'string') pending.reject(new Error(data.error.slice(0, 300)));
         else if (typeof data.frame === 'string' && data.frame.length <= 11_200_000) {
+          const controls = Array.isArray(data.controls) ? data.controls.slice(0, 32).filter(control =>
+            control && typeof control.name === 'string' && control.name.length <= 100 &&
+            !/[\r\n\x00-\x1f]/.test(control.name) &&
+            typeof control.id === 'string' && control.id.length <= 100 &&
+            !/[\r\n\x00-\x1f]/.test(control.id) &&
+            ['ControlType.Button', 'ControlType.MenuItem', 'ControlType.TabItem',
+              'ControlType.Hyperlink'].includes(control.kind))
+            .map(control => ({ name: control.name, id: control.id, kind: control.kind })) : [];
           pending.resolve(pending.kind === 'visible'
             ? { frame: data.frame, pid: data.pid, title: String(data.title || '').slice(0, 160),
-              process: String(data.process || '').slice(0, 80) } : data.frame);
+              process: String(data.process || '').slice(0, 80), controls } : data.frame);
         }
         else pending.reject(new Error('The agent returned an invalid screenshot.'));
       }
