@@ -831,8 +831,14 @@ export default function Home() {
 					if (data.type === "WORKFLOW_PREVIEW") {
 						setIsPlanning(false);
 						setDiscordWorkflow({ id: data.workflowId, deviceName: data.deviceName,
-							recipient: data.recipient, message: data.message, stage: "preview" });
-						speak(`I found a message for ${data.recipient}. Please review the recipient and text before sending.`);
+							recipient: data.recipient, message: data.message, stage: "preview",
+							status: data.recovered ? "Recovered after reconnecting. Review the recipient and message again before sending." : undefined });
+						if (!data.recovered) speak(`I found a message for ${data.recipient}. Please review the recipient and text before sending.`);
+					}
+					if (data.type === "WORKFLOW_RECOVERY_WARNING") {
+						setDiscordWorkflow({ id: data.workflowId, deviceName: data.deviceName,
+							recipient: data.recipient, message: data.message, stage: "error", status: data.error });
+						setLogs(prev => [...prev, `[ERROR] ${data.error}`]);
 					}
 					if (data.type === "WORKFLOW_STATUS") {
 						setDiscordWorkflow(current => current && current.deviceName === data.deviceName

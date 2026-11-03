@@ -11,6 +11,7 @@ Vortix runs commands on a device where its agent is installed. Install it only o
 - The agent sends credentials in WebSocket headers. Hosted connections must use TLS (`wss://`); local development may use `ws://localhost`.
 - The local tray can pause or quit the agent. Approved AI goals are bounded by step count, and Discord message workflows check the visible recipient and draft.
 - Rescue Autopilot is off by default. When enabled, it stores read-only scan summaries that include folder paths, file paths, and sizes. The dashboard owner can clear those summaries. File and PostgreSQL modes keep the newest 20 snapshots per device.
+- Discord workflow checkpoints store the recipient and message for up to 24 hours so an unsent request can be reviewed after reconnecting. A restart during sending marks delivery uncertain and never automatically sends it again.
 
 ## Trust boundary
 

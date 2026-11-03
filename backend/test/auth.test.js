@@ -122,6 +122,39 @@ test('dashboard WebSocket rejects commands and invalid Clerk sessions', { timeou
   }
 });
 
+test('an interrupted Discord preview survives backend restart for the same account', { timeout: 90000 }, async () => {
+  const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const port = await freePort();
+  const dataFile = path.join(os.tmpdir(), `vortix-workflow-${crypto.randomUUID()}.json`);
+  const workflowId = crypto.randomUUID();
+  require('node:fs').writeFileSync(dataFile, JSON.stringify({ devices: {}, commands: [], workflows: {
+    [workflowId]: { id: workflowId, ownerId: 'user_test', deviceId: 'device-test', kind: 'discord',
+      status: 'running', payload: { deviceName: 'TEST', recipient: 'friend', message: 'hello' },
+      expiresAt: Date.now() + 60000, updatedAt: Date.now() },
+  } }));
+  const child = spawn(process.execPath, ['server.js'], { cwd: __dirname + '/..', stdio: 'ignore',
+    env: { ...process.env, DATABASE_URL: '', VORTIX_DATA_FILE: dataFile, PORT: String(port),
+      CLERK_SECRET_KEY: '', CLERK_JWT_KEY: publicKey.export({ type: 'spki', format: 'pem' }),
+      CLERK_AUTHORIZED_PARTIES: 'http://localhost:3000' } });
+  let dashboard;
+  try {
+    await waitForHealth(port, child);
+    dashboard = new WebSocket(`ws://127.0.0.1:${port}/?type=dashboard`);
+    await once(dashboard, 'open');
+    const preview = waitForMessage(dashboard, 'WORKFLOW_PREVIEW');
+    dashboard.send(JSON.stringify({ type: 'AUTH_USER', token: signedToken(privateKey, 'user_test') }));
+    const result = await preview;
+    assert.equal(result.workflowId, workflowId);
+    assert.equal(result.recovered, true);
+    assert.equal(result.message, 'hello');
+    assert.equal(result.recipient, 'friend');
+  } finally {
+    dashboard?.terminate();
+    child.kill();
+    require('node:fs').rmSync(dataFile, { force: true });
+  }
+});
+
 test('verified session unlocks a device and refresh keeps access', { timeout: 90000 }, async () => {
   const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
   const port = await freePort();

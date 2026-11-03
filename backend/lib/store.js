@@ -5,7 +5,7 @@ const { Pool } = require('pg');
 const databaseUrl = process.env.DATABASE_URL;
 const dataFile = path.resolve(process.env.VORTIX_DATA_FILE || path.join(__dirname, '..', 'data', 'state.json'));
 const pool = databaseUrl ? new Pool({ connectionString: databaseUrl }) : null;
-let state = { devices: {}, commands: [], pairings: {}, authAttempts: {}, rescueSettings: {}, rescueSnapshots: {} };
+let state = { devices: {}, commands: [], pairings: {}, authAttempts: {}, rescueSettings: {}, rescueSnapshots: {}, workflows: {} };
 let authFailureWrites = 0;
 
 function persist() {
@@ -50,15 +50,92 @@ async function init() {
       );
       CREATE INDEX IF NOT EXISTS vortix_rescue_snapshots_device_time_idx
         ON vortix_rescue_snapshots(device_id, captured_at DESC);
+      CREATE TABLE IF NOT EXISTS vortix_workflows (
+        id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, device_id TEXT NOT NULL,
+        kind TEXT NOT NULL, status TEXT NOT NULL, payload JSONB NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS vortix_workflows_owner_time_idx
+        ON vortix_workflows(owner_id, updated_at DESC);
     `);
+    await pool.query(`UPDATE vortix_workflows SET status = CASE
+      WHEN status = 'sending' THEN 'delivery_uncertain' ELSE 'interrupted' END, updated_at=NOW()
+      WHERE status IN ('running','sending')`);
+    await pool.query('DELETE FROM vortix_workflows WHERE expires_at < NOW()');
     return;
   }
   if (fs.existsSync(dataFile)) {
     const parsed = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
     state = { devices: parsed.devices || {}, commands: parsed.commands || [],
       pairings: parsed.pairings || {}, authAttempts: parsed.authAttempts || {},
-      rescueSettings: parsed.rescueSettings || {}, rescueSnapshots: parsed.rescueSnapshots || {} };
+      rescueSettings: parsed.rescueSettings || {}, rescueSnapshots: parsed.rescueSnapshots || {},
+      workflows: parsed.workflows || {} };
+    for (const [id, workflow] of Object.entries(state.workflows)) {
+      if (workflow.expiresAt < Date.now()) delete state.workflows[id];
+      else if (workflow.status === 'running' || workflow.status === 'sending') {
+        workflow.status = workflow.status === 'sending' ? 'delivery_uncertain' : 'interrupted';
+      }
+    }
+    persist();
   }
+}
+
+async function createWorkflow({ id, ownerId, deviceId, kind, payload, expiresAt }) {
+  if (pool) {
+    await pool.query('DELETE FROM vortix_workflows WHERE expires_at < NOW()');
+    await pool.query('INSERT INTO vortix_workflows (id,owner_id,device_id,kind,status,payload,expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [id, ownerId, deviceId, kind, 'preview', JSON.stringify(payload), new Date(expiresAt)]);
+  } else {
+    for (const [key, workflow] of Object.entries(state.workflows)) {
+      if (workflow.expiresAt < Date.now()) delete state.workflows[key];
+    }
+    state.workflows[id] = { id, ownerId, deviceId, kind, status: 'preview', payload, expiresAt,
+      updatedAt: Date.now() };
+    persist();
+  }
+}
+
+async function getWorkflow(id, ownerId) {
+  if (pool) {
+    const result = await pool.query(`SELECT id,device_id,kind,status,payload,expires_at FROM vortix_workflows
+      WHERE id=$1 AND owner_id=$2 AND expires_at > NOW()`, [id, ownerId]);
+    const row = result.rows[0];
+    return row && { id: row.id, ownerId, deviceId: row.device_id, kind: row.kind,
+      status: row.status, payload: row.payload, expiresAt: new Date(row.expires_at).getTime() };
+  }
+  const workflow = state.workflows[id];
+  return workflow?.ownerId === ownerId && workflow.expiresAt > Date.now() ? workflow : null;
+}
+
+async function updateWorkflow(id, ownerId, status, expected) {
+  if (pool) {
+    const result = await pool.query(`UPDATE vortix_workflows SET status=$3,updated_at=NOW()
+      WHERE id=$1 AND owner_id=$2 AND status=ANY($4::text[]) AND expires_at > NOW() RETURNING id`,
+    [id, ownerId, status, expected]);
+    return result.rowCount === 1;
+  }
+  const workflow = await getWorkflow(id, ownerId);
+  if (!workflow || !expected.includes(workflow.status)) return false;
+  workflow.status = status;
+  workflow.updatedAt = Date.now();
+  persist();
+  return true;
+}
+
+async function latestRecoverableWorkflow(ownerId) {
+  const statuses = ['preview', 'interrupted', 'delivery_uncertain'];
+  if (pool) {
+    const result = await pool.query(`SELECT id,device_id,kind,status,payload,expires_at FROM vortix_workflows
+      WHERE owner_id=$1 AND status=ANY($2::text[]) AND expires_at > NOW()
+      ORDER BY CASE WHEN status='delivery_uncertain' THEN 0 ELSE 1 END, updated_at DESC LIMIT 1`, [ownerId, statuses]);
+    const row = result.rows[0];
+    return row && { id: row.id, ownerId, deviceId: row.device_id, kind: row.kind,
+      status: row.status, payload: row.payload, expiresAt: new Date(row.expires_at).getTime() };
+  }
+  return Object.values(state.workflows).filter(workflow => workflow.ownerId === ownerId &&
+    workflow.expiresAt > Date.now() && statuses.includes(workflow.status))
+    .sort((a, b) => Number(b.status === 'delivery_uncertain') - Number(a.status === 'delivery_uncertain') ||
+      b.updatedAt - a.updatedAt)[0] || null;
 }
 
 async function getDevice(id) {
@@ -328,4 +405,5 @@ async function getStats(userId) {
 module.exports = { init, getDevice, registerDevice, claimDevice, updatePlatform, listDevices,
   createPairing, consumePairingAndRegister, authAttemptStatus, recordAuthFailure, clearAuthAttempt,
   getRescueState, setRescueEnabled, listDueRescueDevices, saveRescueSnapshot, clearRescueSnapshots,
+  createWorkflow, getWorkflow, updateWorkflow, latestRecoverableWorkflow,
   saveCommand, getHistory, getStats, close, mode: pool ? 'postgres' : 'file' };

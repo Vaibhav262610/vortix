@@ -40,10 +40,18 @@ test('PostgreSQL atomically consumes pairing and persists limits and Rescue sett
       } finally { await verifyPool.end(); }
       await store.clearRescueSnapshots(deviceId, 'test-owner');
       assert.equal((await store.getRescueState(deviceId, 'test-owner')).latest, null);
+      await store.createWorkflow({ id: suffix, ownerId: 'test-owner', deviceId, kind: 'discord',
+        payload: { deviceName: `BENCH-${suffix}`, recipient: 'friend', message: 'hello' },
+        expiresAt: Date.now() + 60000 });
+      assert.equal(await store.updateWorkflow(suffix, 'test-owner', 'running', ['preview']), true);
+      await store.init();
+      assert.equal((await store.getWorkflow(suffix, 'test-owner')).status, 'interrupted');
+      assert.equal(await store.updateWorkflow(suffix, 'other-owner', 'done', ['interrupted']), false);
     } finally {
       const { Pool } = require('pg');
       const pool = new Pool({ connectionString: url.toString() });
       try {
+        await pool.query('DELETE FROM vortix_workflows WHERE id=$1', [suffix]);
         await pool.query('DELETE FROM vortix_rescue_snapshots WHERE device_id=$1', [deviceId]);
         await pool.query('DELETE FROM vortix_rescue_settings WHERE device_id=$1', [deviceId]);
         await pool.query('DELETE FROM vortix_auth_attempts WHERE key=$1', [key]);

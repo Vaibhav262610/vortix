@@ -269,6 +269,21 @@ wss.on("connection", async (ws, req) => {
             dashboardClients.add(ws);
             ws.send(JSON.stringify({ type: 'USER_AUTH_SUCCESS' }));
             await broadcastDevicesToDashboard(ws);
+            const recoverable = await store.latestRecoverableWorkflow(ws.userId);
+            if (recoverable?.kind === 'discord') {
+              const { deviceName, recipient, message } = recoverable.payload;
+              if (recoverable.status === 'delivery_uncertain') {
+                ws.send(JSON.stringify({ type: 'WORKFLOW_RECOVERY_WARNING', workflowId: recoverable.id,
+                  deviceName, recipient, message,
+                  error: 'The backend restarted during a send. Delivery is uncertain; check Discord before composing another message.' }));
+              } else {
+                ws.pendingDiscord = { id: recoverable.id, deviceId: recoverable.deviceId,
+                  deviceName, recipient, message, stage: 'preview', expiresAt: recoverable.expiresAt,
+                  cancelled: false };
+                ws.send(JSON.stringify({ type: 'WORKFLOW_PREVIEW', workflowId: recoverable.id,
+                  deviceName, recipient, message, recovered: true }));
+              }
+            }
             console.log('Dashboard authenticated');
           } else {
             ws.send(JSON.stringify({ type: 'USER_AUTH_REFRESHED' }));
@@ -619,6 +634,15 @@ wss.on("connection", async (ws, req) => {
           ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'A command is still running on this device. Try again when it finishes.' }));
           return;
         }
+        try {
+          if (!await store.updateWorkflow(flow.id, ws.userId, 'running', ['preview', 'interrupted'])) {
+            ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'This message request was already used or expired.' }));
+            return;
+          }
+        } catch (error) {
+          ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', error: 'Workflow state is unavailable. Try again later.' }));
+          return;
+        }
         activeDiscordWorkflows.set(flow.deviceId, flow);
         flow.stage = 'running';
         void (async () => {
@@ -686,6 +710,9 @@ wss.on("connection", async (ws, req) => {
             if (draftCheck.frame) frame = draftCheck.frame;
             if (!draftCheck.ok) throw new Error(`The draft could not be verified: ${draftCheck.reason}`);
             if (flow.cancelled) throw new Error('Workflow cancelled.');
+            if (!await store.updateWorkflow(flow.id, ws.userId, 'sending', ['running'])) {
+              throw new Error('Workflow state changed before sending.');
+            }
             flow.stage = 'sending';
             ws.send(JSON.stringify({ type: 'WORKFLOW_STATUS', deviceName: flow.deviceName,
               stage: 'sending', message: `Sending to @${flow.recipient}` }));
@@ -694,11 +721,16 @@ wss.on("connection", async (ws, req) => {
             const after = await requestDesktopAction(device, 'observe');
             const sentCheck = await verifyDiscordScreen('send', flow.recipient, flow.message, after,
               process.env.GROQ_API_KEY, undefined, () => requestDesktopAction(device, 'observe'));
+            await store.updateWorkflow(flow.id, ws.userId, 'done', ['sending']);
             flow.stage = 'done';
             ws.send(JSON.stringify({ type: 'WORKFLOW_DONE', deviceName: flow.deviceName,
               message: sentCheck.ok ? `Message sent to ${flow.recipient}.` : `Send key pressed; delivery could not be verified: ${sentCheck.reason}` }));
           } catch (error) {
             flow.stage = 'failed';
+            try {
+              await store.updateWorkflow(flow.id, ws.userId, sendAttempted ? 'delivery_uncertain' : 'failed',
+                [sendAttempted ? 'sending' : 'running']);
+            } catch (checkpointError) { console.error('Could not save workflow outcome:', checkpointError); }
             ws.send(JSON.stringify({ type: 'WORKFLOW_ERROR', deviceName: flow.deviceName,
               error: sendAttempted ? `Send was attempted; delivery could not be verified: ${error.message}` : error.message,
               frame: sendAttempted ? undefined : frame }));
@@ -709,9 +741,17 @@ wss.on("connection", async (ws, req) => {
         })();
       }
 
+      if (data.type === 'CANCEL_DISCORD_WORKFLOW' && typeof data.workflowId === 'string' &&
+          ws.pendingDiscord?.id !== data.workflowId) {
+        try { await store.updateWorkflow(data.workflowId, ws.userId, 'acknowledged', ['delivery_uncertain']); }
+        catch (error) { console.error('Could not acknowledge workflow:', error); }
+        return;
+      }
       if (data.type === 'CANCEL_DISCORD_WORKFLOW' && ws.pendingDiscord?.id === data.workflowId) {
         if (ws.pendingDiscord.stage === 'sending') return;
         ws.pendingDiscord.cancelled = true;
+        try { await store.updateWorkflow(ws.pendingDiscord.id, ws.userId, 'cancelled', ['preview', 'interrupted', 'running']); }
+        catch (error) { console.error('Could not cancel workflow:', error); }
         if (ws.pendingDiscord.stage !== 'running' && ws.pendingDiscord.stage !== 'sending') {
           activeDiscordWorkflows.delete(ws.pendingDiscord.deviceId);
         }
@@ -757,8 +797,11 @@ wss.on("connection", async (ws, req) => {
             if (!targetDevice.supportsDiscordDm) throw new Error('Discord messaging requires the updated Windows agent. See Setup to install it.');
             const extracted = await extractDiscordMessage(data.command, process.env.GROQ_API_KEY);
             const id = crypto.randomUUID();
+            const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+            await store.createWorkflow({ id, ownerId: ws.userId, deviceId, kind: 'discord',
+              payload: { deviceName: data.deviceName, ...extracted }, expiresAt });
             ws.pendingDiscord = { id, deviceId, deviceName: data.deviceName, ...extracted,
-              stage: 'preview', expiresAt: Date.now() + 5 * 60 * 1000, cancelled: false };
+              stage: 'preview', expiresAt, cancelled: false };
             ws.send(JSON.stringify({ type: 'WORKFLOW_PREVIEW', deviceName: data.deviceName,
               workflowId: id, ...extracted }));
             return;

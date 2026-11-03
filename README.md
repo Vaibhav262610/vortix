@@ -51,7 +51,7 @@ New agents require a one-time dashboard pairing code. The backend binds them to 
 
 Vortix is a remote execution tool. A compromised backend or owner account could send commands to an online agent; screenshot-based checks can also misread an app. Do not run the agent with administrator rights, and keep it paused when remote control is not needed. No remote-control app can guarantee 100% security.
 
-Pending plans and live workflow state are currently held in backend memory and stop on a restart. The UI is not yet covered by component tests. See [ROADMAP.md](ROADMAP.md) for planned work and measured benchmarks.
+Discord message previews and send checkpoints persist for 24 hours. After a restart, an unsent request requires another review; a possibly sent message is marked uncertain and will not be replayed. Generic screen-aware tasks and pending command plans still stop on a backend restart. The UI is not yet covered by component tests. See [ROADMAP.md](ROADMAP.md) for planned work and measured benchmarks.
 
 ## Repository
 

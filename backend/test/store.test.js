@@ -29,10 +29,22 @@ test('file store keeps ownership and user-scoped history after reload', async ()
     await store.saveRescueSnapshot('device-lab-pc', 'owner-a', { scope: 'home', folders: [], files: [], truncated: false });
     assert.deepEqual(await store.listDueRescueDevices(), []);
     await store.saveCommand({ userId: 'owner-a', deviceId: 'device-lab-pc', deviceName: 'LAB-PC', command: 'echo ok', output: 'ok', exitCode: 0, status: 'success', duration: 20 });
+    const workflowPayload = { deviceName: 'LAB-PC', recipient: 'friend', message: 'hello' };
+    await store.createWorkflow({ id: 'preview-flow', ownerId: 'owner-a', deviceId: 'device-lab-pc',
+      kind: 'discord', payload: workflowPayload, expiresAt: Date.now() + 60000 });
+    await store.createWorkflow({ id: 'sending-flow', ownerId: 'owner-a', deviceId: 'device-lab-pc',
+      kind: 'discord', payload: workflowPayload, expiresAt: Date.now() + 60000 });
+    assert.equal(await store.updateWorkflow('sending-flow', 'owner-a', 'running', ['preview']), true);
+    assert.equal(await store.updateWorkflow('sending-flow', 'owner-a', 'sending', ['running']), true);
+    assert.equal(await store.updateWorkflow('sending-flow', 'owner-b', 'done', ['sending']), false);
 
     delete require.cache[modulePath];
     store = require(modulePath);
     await store.init();
+    assert.equal((await store.getWorkflow('preview-flow', 'owner-a')).status, 'preview');
+    assert.equal((await store.getWorkflow('sending-flow', 'owner-a')).status, 'delivery_uncertain');
+    assert.equal(await store.getWorkflow('sending-flow', 'owner-b'), null);
+    assert.equal((await store.latestRecoverableWorkflow('owner-a')).id, 'sending-flow');
     assert.equal((await store.getDevice('device-lab-pc')).ownerId, 'owner-a');
     assert.equal((await store.getRescueState('device-lab-pc', 'owner-a')).enabled, true);
     assert.equal(await store.getRescueState('device-lab-pc', 'owner-b'), null);
