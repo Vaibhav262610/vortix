@@ -16,6 +16,9 @@ New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
 $output = Join-Path $outputFolder ('VortixSetup-' + $version + '.exe')
 & $compiler /nologo /target:winexe /platform:anycpu /optimize+ "/out:$output" "/win32icon:$icon" "/resource:$archive,VortixPackage" "/resource:$icon,VortixIcon" /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.dll /r:System.Core.dll $source
 if ($LASTEXITCODE -ne 0) { throw "Installer build failed with exit code $LASTEXITCODE" }
-$checksum = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+$hashAlgorithm = [System.Security.Cryptography.SHA256]::Create()
+$outputStream = [System.IO.File]::OpenRead($output)
+try { $checksum = [System.BitConverter]::ToString($hashAlgorithm.ComputeHash($outputStream)).Replace('-', '').ToLowerInvariant() }
+finally { $outputStream.Dispose(); $hashAlgorithm.Dispose() }
 Set-Content -LiteralPath ($output + '.sha256') -Value ($checksum + '  ' + (Split-Path -Leaf $output)) -Encoding Ascii
 Write-Output $output
