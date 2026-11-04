@@ -13,3 +13,5 @@ This list separates shipped controls from work that still needs implementation a
 7. Replace reusable device passwords with per-installation asymmetric device keys and add a local confirmation option for high-risk commands. Complete a third-party security review before making broad trust claims.
 
 The CI badge shows that automated checks ran; it is not a security certification.
+
+
